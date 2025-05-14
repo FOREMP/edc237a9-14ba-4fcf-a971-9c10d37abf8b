@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogIn, Mail, User } from "lucide-react";
 import { authService } from "@/services/auth";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 
 interface LoginFormProps {
   returnPath?: string;
@@ -249,7 +250,7 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
         
         <CardFooter className="flex-col space-y-2">
           <p className="text-xs text-center text-muted-foreground">
-            Genom att logga in eller registrera dig godkänner du våra <a href="#" className="underline">villkor</a> och <a href="#" className="underline">integritetspolicy</a>.
+            Genom att logga in eller registrera dig godkänner du våra <Link to="/terms" className="underline">villkor</Link> och <Link to="/privacy" className="underline">integritetspolicy</Link>.
           </p>
         </CardFooter>
       </Tabs>

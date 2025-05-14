@@ -18,6 +18,8 @@ import Statistics from "./pages/Statistics";
 import Cookies from "./pages/Cookies";
 import CookieBanner from "./components/CookieBanner";
 import ProtectedRoute from "./components/ProtectedRoute";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +38,8 @@ const App = () => (
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/cookies" element={<Cookies />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           
           {/* Protected routes - require authentication */}
           <Route path="/dashboard" element={

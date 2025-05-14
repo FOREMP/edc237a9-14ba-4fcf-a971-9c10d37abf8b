@@ -33,7 +33,17 @@ const Footer = () => {
               </li>
               <li>
                 <Link to="/cookies" className="text-muted-foreground hover:text-primary">
-                  Användarvillkor & Cookies
+                  Cookies
+                </Link>
+              </li>
+              <li>
+                <Link to="/terms" className="text-muted-foreground hover:text-primary">
+                  Användarvillkor
+                </Link>
+              </li>
+              <li>
+                <Link to="/privacy" className="text-muted-foreground hover:text-primary">
+                  Integritetspolicy
                 </Link>
               </li>
             </ul>
