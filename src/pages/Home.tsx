@@ -102,7 +102,7 @@ const Home = () => {
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-3xl font-bold">Senaste jobben</h2>
-            <Button variant="outline" asChild>
+            <Button variant="outline" asChild className="bg-white text-primary border-primary font-semibold">
               <Link to="/jobs">Visa alla jobb</Link>
             </Button>
           </div>
