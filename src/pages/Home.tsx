@@ -49,7 +49,7 @@ const Home = () => {
                 size="lg" 
                 variant="outline" 
                 asChild 
-                className="bg-white border-primary text-primary font-semibold"
+                className="bg-white text-primary font-semibold"
               >
                 <Link to="/dashboard">Din dashboard</Link>
               </Button>
@@ -124,7 +124,7 @@ const Home = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" asChild className="bg-white text-primary font-semibold">
+            <Button size="lg" asChild className="bg-white text-primary font-semibold hover:bg-white hover:text-primary">
               <Link to="/pricing">Se prisplaner</Link>
             </Button>
             
@@ -132,7 +132,7 @@ const Home = () => {
               size="lg" 
               variant="outline" 
               asChild 
-              className="bg-white border-primary text-primary font-semibold"
+              className="bg-white border-primary text-primary font-semibold hover:bg-white hover:text-primary"
             >
               <Link to={isAuthenticated ? "/dashboard" : "/login"}>Prova gratis</Link>
             </Button>
