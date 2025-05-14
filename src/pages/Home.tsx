@@ -39,7 +39,7 @@ const Home = () => {
             Skill Base UF är plattformen som kopplar samman talangfulla kandidater med framstående företag.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" asChild className="bg-white text-primary hover:bg-white/90">
+            <Button size="lg" asChild className="bg-white text-primary font-semibold">
               <Link to="/jobs">Hitta jobb</Link>
             </Button>
             {!isAuthenticated ? (
@@ -49,7 +49,7 @@ const Home = () => {
                 size="lg" 
                 variant="outline" 
                 asChild 
-                className="border-white text-white hover:bg-white/10 transition-colors duration-200 font-semibold"
+                className="bg-white border-primary text-primary font-semibold"
               >
                 <Link to="/dashboard">Din dashboard</Link>
               </Button>
@@ -124,7 +124,7 @@ const Home = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" asChild className="bg-white text-primary hover:bg-white/90 transition-colors duration-200">
+            <Button size="lg" asChild className="bg-white text-primary font-semibold">
               <Link to="/pricing">Se prisplaner</Link>
             </Button>
             
@@ -132,7 +132,7 @@ const Home = () => {
               size="lg" 
               variant="outline" 
               asChild 
-              className="border-white text-white hover:bg-white/10 transition-colors duration-200 font-semibold"
+              className="bg-white border-primary text-primary font-semibold"
             >
               <Link to={isAuthenticated ? "/dashboard" : "/login"}>Prova gratis</Link>
             </Button>
