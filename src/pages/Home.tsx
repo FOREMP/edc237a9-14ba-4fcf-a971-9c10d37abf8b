@@ -1,3 +1,4 @@
+
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,12 @@ const Home = () => {
             {!isAuthenticated ? (
               <LoginButton />
             ) : (
-              <Button size="lg" variant="outline" asChild className="border-white text-white hover:bg-white/10">
+              <Button 
+                size="lg" 
+                variant="outline" 
+                asChild 
+                className="border-white text-white hover:bg-white/10 transition-colors duration-200 font-semibold"
+              >
                 <Link to="/dashboard">Din dashboard</Link>
               </Button>
             )}
@@ -118,11 +124,16 @@ const Home = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" asChild className="bg-white text-primary hover:bg-white/90">
+            <Button size="lg" asChild className="bg-white text-primary hover:bg-white/90 transition-colors duration-200">
               <Link to="/pricing">Se prisplaner</Link>
             </Button>
             
-            <Button size="lg" variant="outline" asChild className="border-white text-white hover:bg-white/10">
+            <Button 
+              size="lg" 
+              variant="outline" 
+              asChild 
+              className="border-white text-white hover:bg-white/10 transition-colors duration-200 font-semibold"
+            >
               <Link to={isAuthenticated ? "/dashboard" : "/login"}>Prova gratis</Link>
             </Button>
           </div>
