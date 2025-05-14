@@ -39,7 +39,7 @@ const Home = () => {
             Skill Base UF är plattformen som kopplar samman talangfulla kandidater med framstående företag.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" asChild className="bg-white text-primary font-semibold">
+            <Button size="lg" asChild className="bg-white text-primary font-semibold hover:bg-white hover:text-primary">
               <Link to="/jobs">Hitta jobb</Link>
             </Button>
             {!isAuthenticated ? (
@@ -49,7 +49,7 @@ const Home = () => {
                 size="lg" 
                 variant="outline" 
                 asChild 
-                className="bg-white text-primary font-semibold"
+                className="bg-white text-primary font-semibold hover:bg-white hover:text-primary"
               >
                 <Link to="/dashboard">Din dashboard</Link>
               </Button>
@@ -102,7 +102,7 @@ const Home = () => {
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-3xl font-bold">Senaste jobben</h2>
-            <Button variant="outline" asChild className="bg-white text-primary border-primary font-semibold">
+            <Button variant="outline" asChild className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary">
               <Link to="/jobs">Visa alla jobb</Link>
             </Button>
           </div>
@@ -132,7 +132,7 @@ const Home = () => {
               size="lg" 
               variant="outline" 
               asChild 
-              className="bg-white border-primary text-primary font-semibold hover:bg-white hover:text-primary"
+              className="bg-white text-primary font-semibold hover:bg-white hover:text-primary"
             >
               <Link to={isAuthenticated ? "/dashboard" : "/login"}>Prova gratis</Link>
             </Button>
