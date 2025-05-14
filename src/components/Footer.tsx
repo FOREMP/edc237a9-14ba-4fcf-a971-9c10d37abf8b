@@ -31,6 +31,11 @@ const Footer = () => {
                   Företagssida
                 </Link>
               </li>
+              <li>
+                <Link to="/cookies" className="text-muted-foreground hover:text-primary">
+                  Användarvillkor & Cookies
+                </Link>
+              </li>
             </ul>
           </div>
           

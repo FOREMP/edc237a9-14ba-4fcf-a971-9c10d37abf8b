@@ -15,6 +15,8 @@ import Pricing from "./pages/Pricing";
 import Auth from "./pages/Auth";
 import UserSettings from "./pages/UserSettings";
 import Statistics from "./pages/Statistics";
+import Cookies from "./pages/Cookies";
+import CookieBanner from "./components/CookieBanner";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -25,6 +27,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <CookieBanner />
         <Routes>
           {/* Public routes - accessible without login */}
           <Route path="/" element={<Home />} />
@@ -32,6 +35,7 @@ const App = () => (
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/cookies" element={<Cookies />} />
           
           {/* Protected routes - require authentication */}
           <Route path="/dashboard" element={
