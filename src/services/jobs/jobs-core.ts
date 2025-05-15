@@ -17,6 +17,7 @@ class JobsServiceCore {
         
       if (error) {
         console.error("Error fetching jobs:", error);
+        toast.error("Kunde inte hämta jobb");
         return [];
       }
 
@@ -26,6 +27,7 @@ class JobsServiceCore {
       return data.map(job => this.mapDbJobToJobType(job));
     } catch (error) {
       console.error("Error fetching all jobs:", error);
+      toast.error("Ett fel uppstod vid hämtning av jobb");
       return [];
     }
   }
@@ -43,11 +45,13 @@ class JobsServiceCore {
       
       if (error) {
         console.error("Error fetching job by ID:", error);
+        toast.error("Kunde inte hämta jobbinformation");
         return null;
       }
       
       if (!data) {
         console.error("No job found with ID:", id);
+        toast.error("Jobbet kunde inte hittas");
         return null;
       }
       
@@ -57,6 +61,7 @@ class JobsServiceCore {
       return this.mapDbJobToJobType(data);
     } catch (error) {
       console.error("Error fetching job by ID:", error);
+      toast.error("Ett fel uppstod vid hämtning av jobbinformation");
       return null;
     }
   }
@@ -71,13 +76,16 @@ class JobsServiceCore {
         
       if (error) {
         console.error("Error deleting job:", error);
+        toast.error("Kunde inte ta bort jobbet");
         return false;
       }
       
       console.log("Job deleted successfully:", id);
+      toast.success("Jobbet har tagits bort");
       return true;
     } catch (error) {
       console.error("Error deleting job:", error);
+      toast.error("Ett fel uppstod vid borttagning av jobbet");
       return false;
     }
   }

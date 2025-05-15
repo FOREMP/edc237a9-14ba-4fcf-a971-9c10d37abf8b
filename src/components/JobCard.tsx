@@ -3,15 +3,15 @@ import { Job } from "@/types";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MapPin, Calendar, GraduationCap, Banknote } from "lucide-react";
-import { Link } from "react-router-dom";
 import JobTypeTag from "./JobTypeTag";
 import JobStatusBadge from "./JobStatusBadge";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { sv } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews"; 
+import JobDetailDialog from "./JobDetailDialog";
 
 interface JobCardProps {
   job: Job;
@@ -33,6 +33,7 @@ const JobCard = ({
   const { id, title, companyName, location, jobType, educationRequired, salary, description, createdAt, status } = job;
   const { isAdmin } = useAuth();
   const { trackJobView } = useJobViews();
+  const [showJobDetail, setShowJobDetail] = useState(false);
 
   const typeClassNames: Record<typeof jobType, string> = {
     fulltime: "job-card-fulltime",
@@ -94,104 +95,112 @@ const JobCard = ({
     };
   }, [id, trackJobView]);
 
-  // Function to handle job detail view tracking
+  // Function to handle job detail view tracking and open the dialog
   const handleJobDetailClick = () => {
-    console.log("Navigating to job detail page:", id);
+    console.log("Opening job detail dialog for:", id);
     const deviceType = getDeviceType();
     trackJobView(id, 'detail', deviceType);
+    setShowJobDetail(true);
   };
 
   return (
-    <Card className={cn("job-card", typeClassNames[jobType])} id={`job-card-${id}`}>
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="text-xl font-semibold">{title}</CardTitle>
-            <CardDescription className="text-base">{companyName}</CardDescription>
+    <>
+      <Card className={cn("job-card", typeClassNames[jobType])} id={`job-card-${id}`}>
+        <CardHeader>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-xl font-semibold">{title}</CardTitle>
+              <CardDescription className="text-base">{companyName}</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <JobTypeTag jobType={jobType} />
+              {(showActions || isAdmin) && <JobStatusBadge status={status} />}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <JobTypeTag jobType={jobType} />
-            {(showActions || isAdmin) && <JobStatusBadge status={status} />}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <MapPin size={16} />
-            <span>{location}</span>
-          </div>
-          
-          {salary && (
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-              <Banknote size={16} />
-              <span>{salary}</span>
+              <MapPin size={16} />
+              <span>{location}</span>
+            </div>
+            
+            {salary && (
+              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                <Banknote size={16} />
+                <span>{salary}</span>
+              </div>
+            )}
+            
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <Calendar size={16} />
+              <span>Publicerad: {dateFormatted}</span>
+            </div>
+            
+            {educationRequired && (
+              <div className="flex items-center space-x-2 text-sm">
+                <GraduationCap size={16} />
+                <span>Utbildning krävs</span>
+              </div>
+            )}
+            
+            <div className="mt-4">
+              <p className="text-sm line-clamp-3">{description}</p>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="flex justify-between">
+          <Button 
+            variant="outline" 
+            className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary"
+            onClick={handleJobDetailClick}
+          >
+            Visa mer
+          </Button>
+          
+          {showActions && (
+            <div className="flex space-x-2">
+              <Button 
+                variant="outline" 
+                onClick={() => onEdit && onEdit(job)}
+              >
+                Redigera
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => onDelete && onDelete(id)}
+              >
+                Ta bort
+              </Button>
             </div>
           )}
-          
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <Calendar size={16} />
-            <span>Publicerad: {dateFormatted}</span>
-          </div>
-          
-          {educationRequired && (
-            <div className="flex items-center space-x-2 text-sm">
-              <GraduationCap size={16} />
-              <span>Utbildning krävs</span>
-            </div>
-          )}
-          
-          <div className="mt-4">
-            <p className="text-sm line-clamp-3">{description}</p>
-          </div>
-        </div>
-      </CardContent>
-      <CardFooter className="flex justify-between">
-        <Button 
-          variant="outline" 
-          asChild 
-          className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary"
-          onClick={handleJobDetailClick}
-        >
-          <Link to={`/jobs/${id}`}>Visa mer</Link>
-        </Button>
-        
-        {showActions && (
-          <div className="flex space-x-2">
-            <Button 
-              variant="outline" 
-              onClick={() => onEdit && onEdit(job)}
-            >
-              Redigera
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={() => onDelete && onDelete(id)}
-            >
-              Ta bort
-            </Button>
-          </div>
-        )}
 
-        {isAdmin && status === 'pending' && (
-          <div className="flex space-x-2">
-            <Button 
-              variant="outline" 
-              className="bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800"
-              onClick={() => onApprove && onApprove(id)}
-            >
-              Godkänn
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={() => onReject && onReject(id)}
-            >
-              Neka
-            </Button>
-          </div>
-        )}
-      </CardFooter>
-    </Card>
+          {isAdmin && status === 'pending' && (
+            <div className="flex space-x-2">
+              <Button 
+                variant="outline" 
+                className="bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800"
+                onClick={() => onApprove && onApprove(id)}
+              >
+                Godkänn
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => onReject && onReject(id)}
+              >
+                Neka
+              </Button>
+            </div>
+          )}
+        </CardFooter>
+      </Card>
+      
+      <JobDetailDialog 
+        jobId={id}
+        open={showJobDetail}
+        onOpenChange={setShowJobDetail}
+      />
+    </>
   );
 };
 

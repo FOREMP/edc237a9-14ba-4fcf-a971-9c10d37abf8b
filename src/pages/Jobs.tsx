@@ -7,6 +7,7 @@ import { Job, JobFilter as JobFilterType } from "@/types";
 import { jobsService } from "@/services/jobs";
 import { Loader2Icon } from "lucide-react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
+import { toast } from "sonner";
 
 const Jobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -34,6 +35,7 @@ const Jobs = () => {
       });
     } catch (error) {
       console.error("Error fetching jobs:", error);
+      toast.error("Kunde inte hämta jobb");
     } finally {
       setIsLoading(false);
     }
