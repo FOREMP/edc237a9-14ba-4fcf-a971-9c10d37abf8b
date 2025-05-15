@@ -94,8 +94,9 @@ const JobCard = ({
     };
   }, [id, trackJobView]);
 
-  // Function to handle job detail view
-  const handleClickViewMore = () => {
+  // Function to handle job detail view tracking
+  const handleJobDetailClick = () => {
+    console.log("Navigating to job detail page:", id);
     const deviceType = getDeviceType();
     trackJobView(id, 'detail', deviceType);
   };
@@ -146,7 +147,12 @@ const JobCard = ({
         </div>
       </CardContent>
       <CardFooter className="flex justify-between">
-        <Button variant="outline" asChild onClick={handleClickViewMore}>
+        <Button 
+          variant="outline" 
+          asChild 
+          className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary"
+          onClick={handleJobDetailClick}
+        >
           <Link to={`/jobs/${id}`}>Visa mer</Link>
         </Button>
         

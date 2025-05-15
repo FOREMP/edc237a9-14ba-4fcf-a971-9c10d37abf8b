@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { jobsService } from "@/services/jobs";
@@ -38,12 +39,16 @@ const JobDetail = () => {
       
       setIsLoading(true);
       try {
+        console.log("Fetching job details for ID:", id);
         const jobData = await jobsService.getJobById(id);
+        
         if (!jobData) {
+          console.error("No job data returned for ID:", id);
           navigate("/jobs", { replace: true });
           return;
         }
         
+        console.log("Job data retrieved:", jobData);
         setJob(jobData);
         
         // Track this as a job detail view
@@ -51,6 +56,7 @@ const JobDetail = () => {
         trackJobView(id, 'detail', deviceType);
       } catch (error) {
         console.error("Error fetching job:", error);
+        navigate("/jobs", { replace: true });
       } finally {
         setIsLoading(false);
       }
@@ -65,7 +71,7 @@ const JobDetail = () => {
     if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
       return 'tablet';
     }
-    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
+    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|mini)/.test(ua)) {
       return 'mobile';
     }
     return 'desktop';
@@ -93,7 +99,7 @@ const JobDetail = () => {
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold mb-2">Jobbet hittades inte</h2>
             <p className="text-muted-foreground mb-6">Jobbet kan ha tagits bort eller är inte längre tillgängligt.</p>
-            <Button asChild>
+            <Button asChild className="bg-white text-primary font-semibold hover:bg-white hover:text-primary">
               <Link to="/jobs">Tillbaka till jobblistan</Link>
             </Button>
           </div>
@@ -218,7 +224,7 @@ const JobDetail = () => {
                   </div>
                 )}
                 
-                <Button className="w-full mt-4" asChild>
+                <Button className="w-full mt-4 bg-white text-primary font-semibold hover:bg-white hover:text-primary" asChild>
                   <a href={`mailto:${job.email || ''}`}>
                     Kontakta arbetsgivaren
                   </a>
@@ -245,7 +251,7 @@ const JobDetail = () => {
             
             {/* Edit button for owner */}
             {isOwner && (
-              <Button variant="outline" className="w-full" asChild>
+              <Button variant="outline" className="w-full bg-white text-primary font-semibold hover:bg-white hover:text-primary" asChild>
                 <Link to={`/dashboard/edit/${job.id}`}>Redigera jobbannons</Link>
               </Button>
             )}

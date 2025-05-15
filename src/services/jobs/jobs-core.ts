@@ -33,6 +33,7 @@ class JobsServiceCore {
   // Get a single job by ID
   async getJobById(id: string): Promise<Job | null> {
     try {
+      console.log("Fetching job with ID:", id);
       // First try to find the job
       const { data, error } = await supabase
         .from('jobs')
@@ -40,8 +41,13 @@ class JobsServiceCore {
         .eq('id', id)
         .maybeSingle();
       
-      if (error || !data) {
+      if (error) {
         console.error("Error fetching job by ID:", error);
+        return null;
+      }
+      
+      if (!data) {
+        console.error("No job found with ID:", id);
         return null;
       }
       
