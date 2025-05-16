@@ -60,6 +60,10 @@ export const useAdminJobs = () => {
           // If no jobs found, create a test job for development
           console.log("No jobs found, creating placeholder job for testing");
           
+          // Calculate a future expiration date (30 days from now)
+          const expiryDate = new Date();
+          expiryDate.setDate(expiryDate.getDate() + 30);
+          
           jobsData = [{
             id: "test-job-1",
             companyId: user?.id || "unknown",
@@ -75,13 +79,18 @@ export const useAdminJobs = () => {
             createdAt: new Date(),
             updatedAt: new Date(),
             companyName: "Test Company",
-            status: "pending" as JobStatus
+            status: "pending" as JobStatus,
+            expiresAt: expiryDate
           }];
         }
       } catch (err) {
         console.error("Error fetching jobs:", err);
         
         // Create test data as fallback
+        // Calculate a future expiration date (30 days from now)
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
+        
         jobsData = [{
           id: "fallback-job-1",
           companyId: user?.id || "unknown",
@@ -97,7 +106,8 @@ export const useAdminJobs = () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           companyName: "Test Company",
-          status: "pending" as JobStatus
+          status: "pending" as JobStatus,
+          expiresAt: expiryDate
         }];
       }
       

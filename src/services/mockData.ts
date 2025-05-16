@@ -19,6 +19,13 @@ export const mockUsers: User[] = [
   },
 ];
 
+// Calculate expiration dates (30 days from creation date)
+const getExpirationDate = (creationDate: Date): Date => {
+  const expiryDate = new Date(creationDate);
+  expiryDate.setDate(expiryDate.getDate() + 30);
+  return expiryDate;
+};
+
 // Mock job listings
 export const mockJobs: Job[] = [
   {
@@ -35,6 +42,7 @@ export const mockJobs: Job[] = [
     updatedAt: new Date("2023-05-15"),
     companyName: "TechCorp",
     status: "approved",
+    expiresAt: getExpirationDate(new Date("2023-05-15")),
   },
   {
     id: "2",
@@ -50,6 +58,7 @@ export const mockJobs: Job[] = [
     updatedAt: new Date("2023-05-20"),
     companyName: "TechCorp",
     status: "approved",
+    expiresAt: getExpirationDate(new Date("2023-05-20")),
   },
   {
     id: "3",
@@ -65,6 +74,7 @@ export const mockJobs: Job[] = [
     updatedAt: new Date("2023-05-25"),
     companyName: "MarketingPro",
     status: "approved",
+    expiresAt: getExpirationDate(new Date("2023-05-25")),
   },
   {
     id: "4",
@@ -79,6 +89,7 @@ export const mockJobs: Job[] = [
     updatedAt: new Date("2023-06-01"),
     companyName: "TechCorp",
     status: "approved",
+    expiresAt: getExpirationDate(new Date("2023-06-01")),
   },
   {
     id: "5",
@@ -94,5 +105,6 @@ export const mockJobs: Job[] = [
     updatedAt: new Date("2023-06-05"),
     companyName: "MarketingPro",
     status: "approved",
+    expiresAt: getExpirationDate(new Date("2023-06-05")),
   },
 ];

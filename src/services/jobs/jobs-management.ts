@@ -1,3 +1,4 @@
+
 import { Job, JobFormData, JobStatus, JobType } from "@/types";
 import { authService } from "../auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -152,6 +153,10 @@ export class JobsManagementService extends JobsServiceCore {
     try {
       console.log("Starting job creation process for user:", currentUser.id);
       
+      // Calculate expiration date (30 days from now)
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 30);
+      
       // Convert JobFormData to database structure (snake_case)
       const jobRecord = {
         title: jobData.title,
@@ -165,7 +170,8 @@ export class JobsManagementService extends JobsServiceCore {
         education_required: jobData.educationRequired,
         email: jobData.email,
         phone: jobData.phone,
-        status: 'pending' as JobStatus
+        status: 'pending' as JobStatus,
+        expires_at: expiryDate.toISOString()
       };
 
       console.log("Creating job record:", jobRecord);
