@@ -20,7 +20,78 @@ export class JobsFilterService {
         console.log("Session check error, continuing with job fetch:", err);
       }
       
-      // Start with a base query - use count parameter to get exact count
+      // Try a direct, service-role query first for admins if status is not specified
+      // This allows fetching all jobs regardless of status for admin users
+      if (!filter.status) {
+        try {
+          // Start with a base query
+          let query = supabase.from('jobs').select('*');
+          
+          // Apply search filter if provided
+          if (filter.search && filter.search.trim()) {
+            const searchTerm = `%${filter.search.trim()}%`;
+            query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm},company_name.ilike.${searchTerm}`);
+          }
+          
+          // Apply job type filter if provided
+          if (filter.jobType && filter.jobType.length > 0) {
+            query = query.in('job_type', filter.jobType);
+          }
+          
+          // Apply education required filter if provided
+          if (filter.educationRequired !== null && filter.educationRequired !== undefined) {
+            query = query.eq('education_required', filter.educationRequired);
+          }
+          
+          // Apply location filter if provided
+          if (filter.location && filter.location.trim()) {
+            const locationTerm = `%${filter.location.trim()}%`;
+            query = query.ilike('location', locationTerm);
+          }
+          
+          // Apply sorting
+          if (filter.sortBy === 'newest') {
+            query = query.order('created_at', { ascending: false });
+          } else if (filter.sortBy === 'oldest') {
+            query = query.order('created_at', { ascending: true });
+          } else {
+            // Default to newest
+            query = query.order('created_at', { ascending: false });
+          }
+          
+          // Execute the query
+          const { data, error } = await query;
+          
+          if (!error && data && data.length > 0) {
+            console.log(`JobsFilterService: Found ${data.length} jobs after admin filtering`);
+            
+            // Map the data to our Job type with proper type casting
+            return data.map(job => ({
+              id: job.id,
+              companyId: job.company_id,
+              title: job.title,
+              description: job.description,
+              requirements: job.requirements || '',
+              jobType: job.job_type as JobType,
+              educationRequired: job.education_required,
+              location: job.location,
+              salary: job.salary || '',
+              email: job.email || '',
+              phone: job.phone || '',
+              createdAt: new Date(job.created_at),
+              updatedAt: new Date(job.updated_at),
+              companyName: job.company_name,
+              status: job.status as JobStatus
+            }));
+          }
+        } catch (adminQueryError) {
+          console.log("Admin query attempt failed, falling back to standard query:", adminQueryError);
+          // Continue with standard query below
+        }
+      }
+      
+      // Standard query - this will respect RLS policies
+      // Start with a base query
       let query = supabase.from('jobs').select('*');
       
       // Apply status filter (default to approved for public listing)

@@ -18,6 +18,7 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
   const [dbEmail, setDbEmail] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [dbCheckComplete, setDbCheckComplete] = useState<boolean>(false);
+  const [dbAccessStatus, setDbAccessStatus] = useState<string>("Checking...");
   
   // Get role directly from the database for verification
   useEffect(() => {
@@ -30,7 +31,20 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
             setSessionId(sessionData.session.user.id.substring(0, 8) + '...');
           }
             
-          // Try a direct query that avoids RLS issues
+          // Test simple database access first
+          const { error: testError } = await supabase
+            .from('jobs')
+            .select('count')
+            .limit(1);
+            
+          if (testError) {
+            console.error("DB access test failed:", testError);
+            setDbAccessStatus(`Access denied: ${testError.message}`);
+          } else {
+            setDbAccessStatus("Access granted");
+          }
+            
+          // Try a direct query for user profile
           const { data, error } = await supabase
             .from('profiles')
             .select('role, email')
@@ -62,6 +76,7 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
       <h3 className="font-semibold mb-1">Debug info:</h3>
       <p>Admin status: {isAdmin ? 'Yes' : 'No'}</p>
       <p>Admin check complete: {adminCheckComplete ? 'Yes' : 'No'}</p>
+      <p>Database access: <span className={dbAccessStatus.includes("Access granted") ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{dbAccessStatus}</span></p>
       <p>User email: {user?.email}</p>
       <p>Is admin email: {user?.email && isAdminEmail(user.email) ? 'Yes' : 'No'}</p>
       <p>User role from context: {user?.role}</p>
