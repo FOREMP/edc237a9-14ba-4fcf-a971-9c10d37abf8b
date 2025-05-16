@@ -1,4 +1,3 @@
-
 import { JobsManagementService } from "./jobs-management";
 import { JobsFilterService } from "./jobs-filter";
 import { Job, JobFilter, JobFormData, JobStatus } from "@/types";
@@ -30,17 +29,8 @@ class JobsServiceApi {
   }
   
   async getJobById(id: string): Promise<Job | null> {
-    // Try to refresh session before getting a job (can help with permission issues)
-    try {
-      const { data: session } = await supabase.auth.getSession();
-      if (session.session) {
-        await supabase.auth.refreshSession();
-      }
-    } catch (err) {
-      console.log("Session refresh attempt failed, continuing with fetch", err);
-    }
-    
-    return this.managementService.getJobById(id);
+    // Use the enhanced method from JobsFilterService which handles both authenticated and public access
+    return this.filterService.getJobById(id);
   }
   
   async getCompanyJobs(): Promise<Job[]> {

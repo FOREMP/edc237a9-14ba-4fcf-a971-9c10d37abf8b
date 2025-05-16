@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { jobsService } from "@/services/jobs";
 import { Job } from "@/types";
@@ -69,7 +70,7 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           toast.error("Förfrågan tog för lång tid. Försök igen.");
           setFetchAttempted(true);
         }
-      }, 10000); // 10 second timeout
+      }, 15000); // Increased timeout to 15 seconds
       
       try {
         console.log("Fetching job details for ID:", jobId);
@@ -81,6 +82,13 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           userId: sessionData.session?.user?.id || 'none'
         });
         
+        // If we have a session, refresh it
+        if (sessionData.session) {
+          await supabase.auth.refreshSession();
+          console.log("Session refreshed before job fetch");
+        }
+        
+        // Direct job fetch using the updated JobsFilterService
         const jobData = await jobsService.getJobById(jobId);
         
         // Guard against component unmounting during async operation

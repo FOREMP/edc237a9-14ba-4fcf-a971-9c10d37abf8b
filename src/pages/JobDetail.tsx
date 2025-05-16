@@ -12,7 +12,8 @@ import {
   Banknote, 
   Mail, 
   Phone,
-  LinkIcon 
+  LinkIcon,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -24,44 +25,63 @@ import { sv } from "date-fns/locale";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import JobViewsStats from "@/components/JobViewsStats";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const JobDetail = () => {
   const { id } = useParams();
   const [job, setJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { trackJobView } = useJobViews();
   const { user, isAdmin } = useAuth();
 
-  useEffect(() => {
-    async function fetchJob() {
-      if (!id) return;
-      
-      setIsLoading(true);
-      try {
-        console.log("Fetching job details for ID:", id);
-        const jobData = await jobsService.getJobById(id);
-        
-        if (!jobData) {
-          console.error("No job data returned for ID:", id);
-          navigate("/jobs", { replace: true });
-          return;
-        }
-        
-        console.log("Job data retrieved:", jobData);
-        setJob(jobData);
-        
-        // Track this as a job detail view
-        const deviceType = getDeviceType();
-        trackJobView(id, 'detail', deviceType);
-      } catch (error) {
-        console.error("Error fetching job:", error);
-        navigate("/jobs", { replace: true });
-      } finally {
-        setIsLoading(false);
-      }
-    }
+  const fetchJob = async () => {
+    if (!id) return;
     
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log("Fetching job details for ID:", id);
+      
+      // Refresh session to ensure we have the latest authentication state
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        if (session.session) {
+          await supabase.auth.refreshSession();
+          console.log("Session refreshed before job fetch");
+        }
+      } catch (err) {
+        console.log("Session refresh error, continuing with fetch", err);
+      }
+      
+      const jobData = await jobsService.getJobById(id);
+      
+      if (!jobData) {
+        console.error("No job data returned for ID:", id);
+        setError("Jobbet kunde inte hittas");
+        toast.error("Jobbet kunde inte hittas");
+        return;
+      }
+      
+      console.log("Job data retrieved:", jobData);
+      setJob(jobData);
+      
+      // Track this as a job detail view
+      const deviceType = getDeviceType();
+      trackJobView(id, 'detail', deviceType);
+    } catch (error) {
+      console.error("Error fetching job:", error);
+      setError("Ett fel uppstod vid hämtning av jobbet");
+      toast.error("Kunde inte ladda jobbinformation");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  useEffect(() => {
     fetchJob();
   }, [id, navigate, trackJobView]);
 
@@ -92,16 +112,39 @@ const JobDetail = () => {
     );
   }
 
-  if (!job) {
+  if (error || !job) {
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
-          <div className="text-center py-12">
-            <h2 className="text-2xl font-bold mb-2">Jobbet hittades inte</h2>
-            <p className="text-muted-foreground mb-6">Jobbet kan ha tagits bort eller är inte längre tillgängligt.</p>
-            <Button asChild className="bg-white text-primary font-semibold hover:bg-white hover:text-primary">
-              <Link to="/jobs">Tillbaka till jobblistan</Link>
+          <div className="mb-6">
+            <Button variant="ghost" asChild className="mb-4">
+              <Link to="/jobs" className="flex items-center">
+                <ArrowLeft size={16} className="mr-2" />
+                Tillbaka till jobblistan
+              </Link>
             </Button>
+          </div>
+          
+          <div className="text-center py-12">
+            <h2 className="text-2xl font-bold mb-2">{error || "Jobbet hittades inte"}</h2>
+            <p className="text-muted-foreground mb-6">
+              {error ? error : "Jobbet kan ha tagits bort eller är inte längre tillgängligt."}
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Button asChild className="bg-white text-primary font-semibold hover:bg-white hover:text-primary">
+                <Link to="/jobs">Tillbaka till jobblistan</Link>
+              </Button>
+              
+              {id && (
+                <Button 
+                  onClick={fetchJob}
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw size={16} />
+                  Försök igen
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </Layout>

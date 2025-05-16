@@ -65,67 +65,127 @@ export class JobsFilterService {
         // Execute the query
         const { data, error } = await query;
         
-        if (!error && data && data.length > 0) {
-          console.log(`JobsFilterService: Found ${data.length} jobs after filtering`);
-          
-          // Map the data to our Job type with proper type casting
-          return data.map(job => ({
-            id: job.id,
-            companyId: job.company_id,
-            title: job.title,
-            description: job.description,
-            requirements: job.requirements || '',
-            jobType: job.job_type as JobType,
-            educationRequired: job.education_required,
-            location: job.location,
-            salary: job.salary || '',
-            email: job.email || '',
-            phone: job.phone || '',
-            createdAt: new Date(job.created_at),
-            updatedAt: new Date(job.updated_at),
-            companyName: job.company_name,
-            status: job.status as JobStatus
-          }));
-        } else if (error) {
+        if (error) {
           console.error("Error with standard query:", error);
-          // Continue to fallback
+          throw error;
         }
+        
+        if (!data || data.length === 0) {
+          console.log("No jobs found with the current filter");
+          return [];
+        }
+        
+        console.log(`JobsFilterService: Found ${data.length} jobs after filtering`);
+        
+        // Map the data to our Job type with proper type casting
+        return data.map(job => ({
+          id: job.id,
+          companyId: job.company_id,
+          title: job.title,
+          description: job.description,
+          requirements: job.requirements || '',
+          jobType: job.job_type as JobType,
+          educationRequired: job.education_required,
+          location: job.location,
+          salary: job.salary || '',
+          email: job.email || '',
+          phone: job.phone || '',
+          createdAt: new Date(job.created_at),
+          updatedAt: new Date(job.updated_at),
+          companyName: job.company_name,
+          status: job.status as JobStatus
+        }));
       } catch (queryError) {
         console.error("Error with standard query:", queryError);
-        // Continue to fallback
+        throw queryError;
       }
-      
-      // If standard query failed, try a more direct approach that might bypass RLS
-      console.log("Attempting fallback for jobs query...");
-      
-      // Create dummy data for testing if all else fails
-      const dummyJobs: Job[] = [];
-      
-      // Try to load real data from the database
-      try {
-        // Instead of using RPC, do a direct count to check database connectivity
-        const { count, error } = await supabase
-          .from('jobs')
-          .select('*', { count: 'exact', head: true });
-          
-        console.log("Total jobs in database:", count);
-        
-        // If we can get a count but not the actual data, at least we know something's there
-        if (count && count > 0) {
-          console.log("Jobs exist but couldn't be fetched - returning empty array");
-        } else {
-          console.log("No jobs found in database");
-        }
-      } catch (countError) {
-        console.error("Error getting job count:", countError);
-      }
-      
-      console.log("JobsFilterService: Returning jobs:", dummyJobs.length);
-      return dummyJobs;
-      
     } catch (error) {
       console.error("Error filtering jobs:", error);
       return [];
     }
+  }
+  
+  /**
+   * Get a specific job by ID
+   */
+  async getJobById(id: string): Promise<Job | null> {
+    try {
+      console.log("JobsFilterService: Getting job with ID:", id);
+      
+      // First ensure we have a valid session before attempting to query
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
+          console.log("Found active session, refreshing before job detail fetch");
+          await supabase.auth.refreshSession();
+        }
+      } catch (err) {
+        console.log("Session check error, continuing with job detail fetch:", err);
+      }
+      
+      // Query for the specific job
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) {
+        console.error("Error fetching job by ID:", error);
+        
+        // If the error is related to RLS, try a fallback approach for public access
+        if (error.code === 'PGRST116') {
+          console.log("Attempting fallback for public job access");
+          
+          // Try to get the job if it's approved (public access)
+          const { data: publicData, error: publicError } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', id)
+            .eq('status', 'approved')
+            .single();
+            
+          if (publicError || !publicData) {
+            console.error("Failed to fetch job with public access:", publicError);
+            return null;
+          }
+          
+          // Successfully retrieved public job
+          return this.mapJobData(publicData);
+        }
+        
+        return null;
+      }
+      
+      if (!data) {
+        console.log("No job found with ID:", id);
+        return null;
+      }
+      
+      return this.mapJobData(data);
+    } catch (error) {
+      console.error("Error getting job by ID:", error);
+      return null;
+    }
+  }
+  
+  private mapJobData(jobData: any): Job {
+    return {
+      id: jobData.id,
+      companyId: jobData.company_id,
+      title: jobData.title,
+      description: jobData.description,
+      requirements: jobData.requirements || '',
+      jobType: jobData.job_type as JobType,
+      educationRequired: jobData.education_required,
+      location: jobData.location,
+      salary: jobData.salary || '',
+      email: jobData.email || '',
+      phone: jobData.phone || '',
+      createdAt: new Date(jobData.created_at),
+      updatedAt: new Date(jobData.updated_at),
+      companyName: jobData.company_name,
+      status: jobData.status as JobStatus
+    };
   }
 }
