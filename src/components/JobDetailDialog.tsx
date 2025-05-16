@@ -239,6 +239,9 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     freelance: "Frilans"
   }[job.jobType];
 
+  // Check if the current user is the owner of this job
+  const isOwner = user && job && user.id === job.companyId;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
