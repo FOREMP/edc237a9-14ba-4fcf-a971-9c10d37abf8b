@@ -17,30 +17,28 @@ export const useAdminJobs = () => {
   const verifyDatabaseAccess = useCallback(async (): Promise<boolean> => {
     try {
       // First check if we have an active session
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (!sessionData.session || sessionError) {
         console.log("No active session, refreshing...");
-        await supabase.auth.refreshSession();
-        
-        // Check again after refresh
-        const { data: refreshedSession } = await supabase.auth.getSession();
-        if (!refreshedSession.session) {
-          console.error("Still no active session after refresh");
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshData.session) {
+          console.error("Still no active session after refresh", refreshError);
           return false;
         }
+        console.log("Session refreshed successfully:", refreshData.session.user.email);
       }
 
-      // Test database access with a simple query that should work
-      const { data: testData, error: testError } = await supabase
-        .from('profiles')
+      // Test database access with a simple query
+      const { data: jobsCountData, error: jobsCountError } = await supabase
+        .from('jobs')
         .select('count', { count: 'exact', head: true });
 
-      if (testError) {
-        console.error("Database access test failed:", testError);
+      if (jobsCountError) {
+        console.error("Database access test failed:", jobsCountError);
         return false;
       }
 
-      console.log("Database access verified successfully");
+      console.log("Database access verified successfully, jobs count:", jobsCountData?.count);
       return true;
     } catch (err) {
       console.error("Error verifying database access:", err);
@@ -84,37 +82,70 @@ export const useAdminJobs = () => {
       const hasAccess = await verifyDatabaseAccess();
       if (!hasAccess) {
         console.error("Database access verification failed");
-        setError("Databasåtkomst nekad. Kontrollera att du är inloggad som administratör.");
-        toast.error("Databasåtkomst nekad. Försöker igen...");
         
-        // Try to refresh the session as a last attempt
-        console.log("Attempting session refresh as recovery action");
+        // Force refresh session and try again
         await supabase.auth.refreshSession();
-        setIsLoading(false);
-        return;
+        const secondAttempt = await verifyDatabaseAccess();
+        
+        if (!secondAttempt) {
+          setError("Databasåtkomst nekad. Kontrollera att du är inloggad som administratör.");
+          toast.error("Databasåtkomst nekad. Försöker igen...");
+          setIsLoading(false);
+          return;
+        }
       }
       
       console.log("Proceeding with admin job fetch, admin status confirmed:", isUserAdmin);
       
-      // Use the jobsService to get all jobs
-      const allJobsData = await jobsService.getCompanyJobs();
+      // Direct query to ensure we bypass any potential RLS issues
+      const { data, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*');
       
-      if (!allJobsData || allJobsData.length === 0) {
-        console.log("No jobs returned from jobsService");
+      if (jobsError) {
+        console.error("Error fetching jobs directly:", jobsError);
+        setError("Kunde inte hämta jobb: " + jobsError.message);
         setJobs([]);
         setAllJobs([]);
         setIsLoading(false);
         return;
       }
       
-      console.log("All jobs fetched:", allJobsData.length);
+      if (!data || data.length === 0) {
+        console.log("No jobs returned from direct query");
+        setJobs([]);
+        setAllJobs([]);
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log("All jobs fetched directly:", data.length);
+      
+      // Convert to our Job type
+      const mappedJobs = data.map(job => ({
+        id: job.id,
+        companyId: job.company_id,
+        title: job.title,
+        description: job.description,
+        requirements: job.requirements || '',
+        jobType: job.job_type,
+        educationRequired: job.education_required,
+        location: job.location,
+        salary: job.salary || '',
+        email: job.email || '',
+        phone: job.phone || '',
+        createdAt: new Date(job.created_at),
+        updatedAt: new Date(job.updated_at),
+        companyName: job.company_name,
+        status: job.status
+      }));
       
       // Keep a copy of all jobs for debugging and reference
-      setAllJobs(allJobsData);
-      setJobs(allJobsData);
+      setAllJobs(mappedJobs);
+      setJobs(mappedJobs);
 
       // Debug table of jobs we got
-      console.table(allJobsData.slice(0, 5).map(job => ({
+      console.table(mappedJobs.slice(0, 5).map(job => ({
         id: job.id, 
         title: job.title,
         company: job.companyName,

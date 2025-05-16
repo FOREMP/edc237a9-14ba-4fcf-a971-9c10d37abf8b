@@ -26,6 +26,14 @@ export class JobsManagementService extends JobsServiceCore {
         role: currentUser.role
       });
 
+      // First refresh session to ensure we have the latest token
+      try {
+        await supabase.auth.refreshSession();
+        console.log("Session refreshed before job fetch");
+      } catch (refreshError) {
+        console.log("Session refresh failed, continuing with job fetch");
+      }
+
       // Enhanced admin check - check both role AND email
       const isAdmin = currentUser.role === 'admin' || (currentUser.email && isAdminEmail(currentUser.email));
       
@@ -36,81 +44,40 @@ export class JobsManagementService extends JobsServiceCore {
         isAdminByEmail: currentUser.email ? isAdminEmail(currentUser.email) : false
       });
       
-      // For admin users, return all jobs without filtering
+      // For admin users, directly query all jobs without filters
       if (isAdmin) {
         console.log("User is admin - fetching ALL jobs without company_id filter");
         
-        // Try direct query with retries for session issues
-        let attempts = 0;
-        let data = null;
-        let error = null;
-        
-        while (attempts < 3 && !data) {
-          try {
-            // Check session first
-            const { data: sessionData } = await supabase.auth.getSession();
-            console.log("Current session check:", {
-              hasSession: !!sessionData.session,
-              userEmail: sessionData.session?.user?.email
-            });
-            
-            if (!sessionData.session) {
-              console.error("No active session found, refreshing...");
-              await supabase.auth.refreshSession();
-              attempts++;
-              continue;
-            }
-            
-            // FIX: Use proper count query syntax and avoid the "count(*)" raw string
-            // First check if we can access the table with a simple count query
-            const { count, error: countError } = await supabase
-              .from('jobs')
-              .select('*', { count: 'exact', head: true });
-              
-            if (countError) {
-              console.error("Error checking jobs count:", countError);
-              // If we can't count, we might have permission issues
-              throw new Error(`Database access denied: ${countError.message}`);
-            }
-            
-            console.log("Database access verified, job count:", count);
-            
-            // Now fetch the actual jobs data
-            const result = await supabase.from('jobs').select('*');
-            error = result.error;
-            data = result.data;
-            
-            if (error) {
-              console.error("Error fetching all jobs as admin (attempt " + (attempts + 1) + "):", error);
-              attempts++;
-              
-              if (error.message.includes("JWT") || error.message.includes("token")) {
-                console.log("JWT/token issue detected, refreshing session...");
-                await supabase.auth.refreshSession();
-              } else {
-                // Non-token related error, break loop
-                break;
-              }
-            }
-          } catch (e) {
-            console.error("Exception during job fetch (attempt " + (attempts + 1) + "):", e);
-            attempts++;
-          }
-        }
+        // Direct database query that avoids potential RLS issues
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*');
         
         if (error) {
-          console.error("All attempts to fetch jobs failed:", error);
-          toast.error("Kunde inte hämta jobb: " + error.message);
-          return [];
-        }
-        
-        if (!data) {
-          console.error("No data returned after all attempts");
+          console.error("Error fetching all jobs as admin:", error);
+          
+          // If there's an auth error, try to refresh the session and try again
+          if (error.message.includes("JWT")) {
+            console.log("JWT issue detected, refreshing session and trying again");
+            await supabase.auth.refreshSession();
+            
+            // Try again after refresh
+            const retryResult = await supabase.from('jobs').select('*');
+            
+            if (retryResult.error) {
+              console.error("Error still persists after session refresh:", retryResult.error);
+              return [];
+            }
+            
+            console.log("Retry successful, got jobs after session refresh:", retryResult.data?.length || 0);
+            return retryResult.data?.map(job => this.mapDbJobToJobType(job)) || [];
+          }
+          
           return [];
         }
         
         console.log("Got all jobs from Supabase as admin:", data?.length || 0);
-        return data.map(job => this.mapDbJobToJobType(job));
+        return data?.map(job => this.mapDbJobToJobType(job)) || [];
       }
       
       // For non-admin companies, only return their own jobs
@@ -128,7 +95,7 @@ export class JobsManagementService extends JobsServiceCore {
       console.log("Got company jobs from Supabase:", data?.length || 0);
       
       // Convert data to our Job type
-      return data.map(job => this.mapDbJobToJobType(job));
+      return data?.map(job => this.mapDbJobToJobType(job)) || [];
     } catch (error) {
       console.error("Error fetching company jobs:", error);
       return [];
@@ -157,6 +124,9 @@ export class JobsManagementService extends JobsServiceCore {
     try {
       console.log("Fetching pending jobs as admin:", currentUser.email);
       
+      // Try to refresh session first to avoid auth issues
+      await supabase.auth.refreshSession();
+      
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -170,7 +140,7 @@ export class JobsManagementService extends JobsServiceCore {
       console.log("Got pending jobs from Supabase:", data?.length || 0);
       
       // Convert data to our Job type
-      return data.map(job => this.mapDbJobToJobType(job));
+      return data?.map(job => this.mapDbJobToJobType(job)) || [];
     } catch (error) {
       console.error("Error fetching pending jobs:", error);
       return [];

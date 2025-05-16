@@ -16,6 +16,16 @@ class JobsServiceApi {
 
   // Proxy all methods from management service
   async getAllJobs(): Promise<Job[]> {
+    // Make sure session is valid before getting jobs
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (session.session) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (err) {
+      console.log("Session refresh attempt failed, continuing with fetch", err);
+    }
+    
     return this.managementService.getAllJobs();
   }
   
@@ -48,10 +58,32 @@ class JobsServiceApi {
   }
   
   async getPendingJobs(): Promise<Job[]> {
+    // Try to refresh session before getting pending jobs
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (session.session) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (err) {
+      console.log("Session refresh attempt failed, continuing with fetch", err);
+    }
+    
     return this.managementService.getPendingJobs();
   }
   
   async createJob(jobData: JobFormData): Promise<Job | null> {
+    // Ensure session is valid before creating jobs
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) {
+        console.error("No active session found when trying to create job");
+        return null;
+      }
+      await supabase.auth.refreshSession();
+    } catch (err) {
+      console.log("Session refresh attempt failed before job creation", err);
+    }
+    
     return this.managementService.createJob(jobData);
   }
   

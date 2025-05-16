@@ -7,14 +7,14 @@ export class JobsFilterService {
     try {
       console.log("JobsFilterService: Getting filtered jobs with filter:", filter);
       
-      // Ensure authenticated session is active and refreshed
+      // First ensure we have a valid session before attempting to query
       try {
-        const { data: session } = await supabase.auth.getSession();
-        if (session.session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData.session) {
           console.log("Found active session, refreshing before job fetch");
           await supabase.auth.refreshSession();
         } else {
-          console.log("No active session found for job fetch");
+          console.log("No active session found for job fetch, continuing as public");
         }
       } catch (err) {
         console.log("Session check error, continuing with job fetch:", err);
@@ -66,10 +66,16 @@ export class JobsFilterService {
         return [];
       }
       
-      console.log(`JobsFilterService: Found ${data?.length || 0} jobs after filtering`);
+      // Debug output
+      if (data && data.length > 0) {
+        console.log(`JobsFilterService: Found ${data.length} jobs after filtering`);
+        console.log("First job in results:", data[0]);
+      } else {
+        console.log("JobsFilterService: No jobs found matching filter criteria");
+      }
       
       // Convert to our Job type with proper mapping
-      return data.map(job => ({
+      return data ? data.map(job => ({
         id: job.id,
         companyId: job.company_id,
         title: job.title,
@@ -84,8 +90,8 @@ export class JobsFilterService {
         createdAt: new Date(job.created_at),
         updatedAt: new Date(job.updated_at),
         companyName: job.company_name,
-        status: job.status as JobStatus // Explicitly cast status to JobStatus type
-      }));
+        status: job.status as JobStatus
+      })) : [];
     } catch (error) {
       console.error("Error filtering jobs:", error);
       return [];

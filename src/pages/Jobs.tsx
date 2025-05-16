@@ -8,6 +8,7 @@ import { jobsService } from "@/services/jobs";
 import { Loader2Icon, AlertCircle, RefreshCw } from "lucide-react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const Jobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -15,6 +16,21 @@ const Jobs = () => {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<JobFilterType>({});
   const { trackJobView } = useJobViews();
+
+  // Function to ensure we have a valid session before fetching jobs
+  const ensureSession = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData.session) {
+        console.log("Refreshing session before job fetch");
+        await supabase.auth.refreshSession();
+      }
+      return true;
+    } catch (err) {
+      console.log("Session refresh error, continuing:", err);
+      return false;
+    }
+  };
 
   useEffect(() => {
     fetchJobs();
@@ -25,6 +41,9 @@ const Jobs = () => {
     setError(null);
     
     try {
+      // Ensure session is valid before fetching
+      await ensureSession();
+      
       console.log("Fetching jobs with filter:", filter);
       // Only show approved jobs in the public jobs list
       const filteredJobs = await jobsService.getFilteredJobs({...filter, status: 'approved'});
@@ -71,8 +90,10 @@ const Jobs = () => {
     setFilter(newFilter);
   };
 
-  const handleRetry = () => {
+  const handleRetry = async () => {
     console.log("Retrying job fetch...");
+    // Force session refresh and try again
+    await supabase.auth.refreshSession();
     fetchJobs();
   };
 
