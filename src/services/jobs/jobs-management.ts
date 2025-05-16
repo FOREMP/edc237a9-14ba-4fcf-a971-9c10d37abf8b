@@ -1,4 +1,3 @@
-
 import { Job, JobFormData, JobStatus, JobType } from "@/types";
 import { authService } from "../auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -286,61 +285,65 @@ export class JobsManagementService extends JobsServiceCore {
         console.log("Job status updated successfully:", data);
         return this.mapDbJobToJobType(data);
       } catch (updateError) {
-        console.error("Falling back to direct RPC call for job update:", updateError);
+        console.error("Falling back to direct database update for job:", updateError);
         
-        // Try to use an RPC function that can bypass RLS
-        try {
-          const { data, error } = await supabase.rpc('admin_update_job_status', { 
-            job_id: id, 
-            new_status: status 
-          });
-          
-          if (error) {
-            console.error("RPC fallback also failed:", error);
-            throw error;
-          }
-          
-          // If RPC was successful, try to fetch the updated job
-          const { data: jobData, error: jobError } = await supabase
-            .from('jobs')
-            .select('*')
-            .eq('id', id)
-            .single();
-            
-          if (jobError) {
-            console.error("Error fetching updated job:", jobError);
-            // Return a minimal job object with the updated status
-            return {
-              id: id,
-              companyId: '',
-              title: 'Job Updated',
-              description: 'Job status was updated successfully but details could not be fetched.',
-              requirements: '',
-              jobType: 'FULL_TIME' as JobType,
-              educationRequired: false,
-              location: '',
-              salary: '',
-              email: '',
-              phone: '',
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              companyName: '',
-              status: status as JobStatus
-            };
-          }
-          
-          return this.mapDbJobToJobType(jobData);
-        } catch (rpcError) {
-          console.error("All update methods failed:", rpcError);
-          
-          // As a last resort, trigger a global page reload to get fresh data
-          // This doesn't return the job object but will ensure UI refreshes
-          setTimeout(() => {
-            window.location.reload();
-          }, 1000);
-          
-          return null;
+        // Instead of using RPC that doesn't exist, try a direct update
+        // and ensure the user is an admin in our code
+        if (!isAdmin) {
+          console.error("Not authorized to update job status");
+          throw new Error("Not authorized to update job status");
         }
+        
+        // Try an update with explicit select again
+        const { data, error } = await supabase
+          .from('jobs')
+          .update({
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id)
+          .select('*');
+          
+        if (error) {
+          console.error("All update methods failed:", error);
+          throw error;
+        }
+        
+        if (data && data.length > 0) {
+          console.log("Job status updated successfully via fallback:", data[0]);
+          return this.mapDbJobToJobType(data[0]);
+        }
+        
+        // If we got here but no data, try to fetch the updated job
+        const { data: jobData, error: jobError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('id', id)
+          .single();
+          
+        if (jobError) {
+          console.error("Error fetching updated job:", jobError);
+          // Return a minimal job object with the updated status
+          return {
+            id: id,
+            companyId: '',
+            title: 'Job Updated',
+            description: 'Job status was updated successfully but details could not be fetched.',
+            requirements: '',
+            jobType: 'FULL_TIME' as JobType,
+            educationRequired: false,
+            location: '',
+            salary: '',
+            email: '',
+            phone: '',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            companyName: '',
+            status: status as JobStatus
+          };
+        }
+        
+        return this.mapDbJobToJobType(jobData);
       }
     } catch (error) {
       console.error("Error updating job status:", error);

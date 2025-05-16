@@ -102,8 +102,13 @@ export class JobsFilterService {
       const dummyJobs: Job[] = [];
       
       // Try to load real data from the database
+      // FIX: Remove the RPC call that doesn't exist in the database
       try {
-        const { data: count } = await supabase.rpc('get_job_count');
+        // Instead of calling a non-existent RPC function, just count the jobs directly
+        const { count, error } = await supabase
+          .from('jobs')
+          .select('*', { count: 'exact', head: true });
+          
         console.log("Total jobs in database:", count);
         
         // If we can get a count but not the actual data, at least we know something's there
