@@ -36,7 +36,7 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         .from('profiles')
         .select('role, email')
         .eq('id', auth.user.id)
-        .single();
+        .maybeSingle();
         
       if (error) {
         console.error("Error checking admin status from DB:", error);

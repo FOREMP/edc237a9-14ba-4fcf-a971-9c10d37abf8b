@@ -1,3 +1,4 @@
+
 import { User } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
@@ -57,27 +58,48 @@ class AuthenticationService {
 
   // Sign in an existing user
   async signIn(email: string, password: string): Promise<boolean> {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
+    try {
+      console.log("Signing in with email:", email);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
 
-    if (error) {
-      console.error("Signin failed:", error);
-      return false;
-    }
-
-    // After successful signin, fetch the user profile and set the user in local storage
-    if (data.user) {
-      try {
-        await this.fetchUserProfile(data.user.id);
-      } catch (profileError) {
-        console.error("Error fetching user profile:", profileError);
+      if (error) {
+        console.error("Signin failed:", error);
         return false;
       }
-    }
 
-    return true;
+      // After successful signin, fetch the user profile and set the user in local storage
+      if (data.user) {
+        try {
+          // Set a simplified user first so we have some data even if profile fetch fails
+          const basicUser: User = {
+            id: data.user.id,
+            googleId: data.user.id,
+            email: data.user.email || email,
+            companyName: 'Loading...',
+            // Check if email is admin email
+            role: isAdminEmail(data.user.email || '') ? 'admin' : 'company'
+          };
+          this.setCurrentUser(basicUser);
+          
+          // Then try to load the full profile
+          await this.fetchUserProfile(data.user.id);
+          return true;
+        } catch (profileError) {
+          console.error("Error fetching user profile after signin:", profileError);
+          // Return true anyway since authentication succeeded
+          // The user will have basic data at minimum
+          return true;
+        }
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Sign in process error:", e);
+      return false;
+    }
   }
 
   // Sign in with Google using OAuth
@@ -220,75 +242,177 @@ class AuthenticationService {
 
   // Sign out the current user
   async logout(): Promise<void> {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Logout failed:", error);
-    }
+    // Clear local storage first to prevent any state inconsistencies
     this.setCurrentUser(null);
+    
+    try {
+      // Try to perform a global sign out
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      if (error) {
+        console.error("Logout failed:", error);
+      }
+    } catch (error) {
+      console.error("Error during logout:", error);
+    }
+    
+    // Ensure all Supabase auth keys are removed
+    this.cleanupAuthState();
+  }
+  
+  // Clean up all Supabase auth tokens from storage
+  private cleanupAuthState(): void {
+    try {
+      // Remove all Supabase auth keys from localStorage
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('supabase.auth.') || key.includes('sb-') || key === 'currentUser') {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Remove from sessionStorage if in use
+      if (typeof sessionStorage !== 'undefined') {
+        Object.keys(sessionStorage).forEach((key) => {
+          if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Error cleaning up auth state:", e);
+    }
   }
 
   // Refresh the session and fetch user profile
   async refreshSession(): Promise<boolean> {
-    const { data: { session }, error } = await supabase.auth.getSession();
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
 
-    if (error) {
-      console.error("Failed to refresh session:", error);
-      return false;
-    }
-
-    if (session?.user) {
-      try {
-        await this.fetchUserProfile(session.user.id);
-        return true;
-      } catch (profileError) {
-        console.error("Error fetching user profile:", profileError);
+      if (error) {
+        console.error("Failed to refresh session:", error);
         return false;
       }
-    } else {
-      // No active session, clear the current user
-      this.setCurrentUser(null);
+
+      if (session?.user) {
+        try {
+          await this.fetchUserProfile(session.user.id);
+          return true;
+        } catch (profileError) {
+          console.error("Error fetching user profile:", profileError);
+          
+          // Even if profile fetch fails, we still have a valid session
+          if (!this.currentUser && session.user) {
+            // Set minimal user data from session
+            const basicUser: User = {
+              id: session.user.id,
+              googleId: session.user.id,
+              email: session.user.email || '',
+              companyName: 'Unknown',
+              role: isAdminEmail(session.user.email || '') ? 'admin' : 'company'
+            };
+            this.setCurrentUser(basicUser);
+          }
+          
+          return true;
+        }
+      } else {
+        // No active session, clear the current user
+        this.setCurrentUser(null);
+        return false;
+      }
+    } catch (e) {
+      console.error("Session refresh error:", e);
       return false;
     }
   }
 
   // Fetch user profile from the database
   private async fetchUserProfile(userId: string): Promise<void> {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    try {
+      console.log("Fetching user profile for ID:", userId);
+      
+      // Try to fetch the profile with error handling
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching profile:", error);
+      if (error) {
+        // Check for infinite recursion error which happens with RLS
+        if (error.message && error.message.includes('infinite recursion')) {
+          console.error("RLS recursion error fetching profile, fallback to direct admin check");
+          
+          // Handle this specific error by checking if user is admin by email
+          const sessionData = await supabase.auth.getSession();
+          const userEmail = sessionData.data.session?.user?.email;
+          
+          if (userEmail && isAdminEmail(userEmail)) {
+            // Create admin user based on email check
+            const adminUser: User = {
+              id: userId,
+              googleId: userId,
+              email: userEmail,
+              companyName: 'Admin',
+              role: 'admin'
+            };
+            this.setCurrentUser(adminUser);
+            return;
+          }
+        } else {
+          console.error("Error fetching profile:", error);
+        }
+        throw error;
+      }
+
+      // If profile was found, create user object
+      if (profile) {
+        // Check if the user has an admin email
+        const hasAdminEmail = profile.email && isAdminEmail(profile.email);
+        
+        const user: User = {
+          id: profile.id,
+          googleId: profile.id,
+          email: profile.email,
+          companyName: profile.company_name || 'Company Name',
+          // Override role to 'admin' if admin email
+          role: hasAdminEmail ? 'admin' : (profile.role as 'company' | 'admin'),
+          organizationNumber: profile.organization_number || undefined,
+          vatNumber: profile.vat_number || undefined,
+          website: profile.website || undefined,
+          companyDescription: profile.company_description || undefined,
+        };
+        
+        console.log("User profile fetched with role:", {
+          email: profile.email,
+          originalRole: profile.role,
+          assignedRole: user.role,
+          isAdminByEmail: hasAdminEmail
+        });
+        
+        this.setCurrentUser(user);
+      } else {
+        // No profile found, check if user is admin by email
+        const sessionData = await supabase.auth.getSession();
+        const userEmail = sessionData.data.session?.user?.email;
+        
+        if (userEmail && isAdminEmail(userEmail)) {
+          // Create admin user based on email check
+          const adminUser: User = {
+            id: userId,
+            googleId: userId,
+            email: userEmail,
+            companyName: 'Admin',
+            role: 'admin'
+          };
+          this.setCurrentUser(adminUser);
+        } else {
+          console.error("No profile found for user ID:", userId);
+          throw new Error("User profile not found");
+        }
+      }
+    } catch (error) {
+      console.error("Error in fetchUserProfile:", error);
       throw error;
-    }
-
-    if (profile) {
-      // Check if the user has an admin email
-      const hasAdminEmail = profile.email && isAdminEmail(profile.email);
-      
-      const user: User = {
-        id: profile.id,
-        googleId: profile.id,
-        email: profile.email,
-        companyName: profile.company_name || 'Company Name',
-        // Override role to 'admin' if admin email
-        role: hasAdminEmail ? 'admin' : (profile.role as 'company' | 'admin'),
-        organizationNumber: profile.organization_number || undefined,
-        vatNumber: profile.vat_number || undefined,
-        website: profile.website || undefined,
-        companyDescription: profile.company_description || undefined,
-      };
-      
-      console.log("User profile fetched with role:", {
-        email: profile.email,
-        originalRole: profile.role,
-        assignedRole: user.role,
-        isAdminByEmail: hasAdminEmail
-      });
-      
-      this.setCurrentUser(user);
     }
   }
 

@@ -5,6 +5,21 @@ import { supabase } from "@/integrations/supabase/client";
 export class JobsFilterService {
   async getFilteredJobs(filter: JobFilter): Promise<Job[]> {
     try {
+      console.log("JobsFilterService: Getting filtered jobs with filter:", filter);
+      
+      // Ensure authenticated session is active and refreshed
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        if (session.session) {
+          console.log("Found active session, refreshing before job fetch");
+          await supabase.auth.refreshSession();
+        } else {
+          console.log("No active session found for job fetch");
+        }
+      } catch (err) {
+        console.log("Session check error, continuing with job fetch:", err);
+      }
+      
       // Start with a base query
       let query = supabase.from('jobs').select('*');
       
@@ -50,6 +65,8 @@ export class JobsFilterService {
         console.error("Error filtering jobs:", error);
         return [];
       }
+      
+      console.log(`JobsFilterService: Found ${data?.length || 0} jobs after filtering`);
       
       // Convert to our Job type with proper mapping
       return data.map(job => ({
