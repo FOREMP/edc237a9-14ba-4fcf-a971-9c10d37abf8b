@@ -27,6 +27,7 @@ import { sv } from "date-fns/locale";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import JobViewsStats from "@/components/JobViewsStats";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface JobDetailDialogProps {
   jobId: string | null;
@@ -37,6 +38,7 @@ interface JobDetailDialogProps {
 const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) => {
   const [job, setJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { trackJobView } = useJobViews();
   const { user, isAdmin } = useAuth();
 
@@ -45,16 +47,20 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
       if (!jobId || !open) return;
       
       setIsLoading(true);
+      setError(null);
+      
       try {
         console.log("Fetching job details for ID:", jobId);
         const jobData = await jobsService.getJobById(jobId);
         
         if (!jobData) {
           console.error("No job data returned for ID:", jobId);
+          setError("Jobbet kunde inte hittas");
+          toast.error("Jobbet kunde inte hittas");
           return;
         }
         
-        console.log("Job data retrieved:", jobData);
+        console.log("Job data retrieved successfully:", jobData);
         setJob(jobData);
         
         // Track this as a job detail view
@@ -62,6 +68,8 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
         trackJobView(jobId, 'detail', deviceType);
       } catch (error) {
         console.error("Error fetching job:", error);
+        setError("Ett fel uppstod vid hämtning av jobbet");
+        toast.error("Kunde inte ladda jobbinformation");
       } finally {
         setIsLoading(false);
       }
@@ -97,12 +105,12 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     );
   }
 
-  if (!job) {
+  if (error || !job) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[900px]">
           <DialogHeader>
-            <DialogTitle>Jobbet hittades inte</DialogTitle>
+            <DialogTitle>{error || "Jobbet hittades inte"}</DialogTitle>
             <DialogClose className="absolute right-4 top-4" />
           </DialogHeader>
           <div className="text-center py-6">

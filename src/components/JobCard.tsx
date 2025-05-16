@@ -50,7 +50,7 @@ const JobCard = ({
     if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
       return 'tablet';
     }
-    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
+    if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|mini)/.test(ua)) {
       return 'mobile';
     }
     return 'desktop';
@@ -97,7 +97,7 @@ const JobCard = ({
 
   // Function to handle job detail view tracking and open the dialog
   const handleJobDetailClick = () => {
-    console.log("Opening job detail dialog for:", id);
+    console.log("Opening job detail dialog for job:", id);
     const deviceType = getDeviceType();
     trackJobView(id, 'detail', deviceType);
     setShowJobDetail(true);

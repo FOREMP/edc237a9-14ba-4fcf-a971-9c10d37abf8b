@@ -12,6 +12,7 @@ import { toast } from "sonner";
 const Jobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<JobFilterType>({});
   const { trackJobView } = useJobViews();
 
@@ -21,7 +22,10 @@ const Jobs = () => {
 
   const fetchJobs = async () => {
     setIsLoading(true);
+    setError(null);
+    
     try {
+      console.log("Fetching jobs with filter:", filter);
       // Only show approved jobs in the public jobs list
       const filteredJobs = await jobsService.getFilteredJobs({...filter, status: 'approved'});
       console.log("Fetched approved jobs:", filteredJobs.length);
@@ -35,6 +39,7 @@ const Jobs = () => {
       });
     } catch (error) {
       console.error("Error fetching jobs:", error);
+      setError("Kunde inte hämta jobb");
       toast.error("Kunde inte hämta jobb");
     } finally {
       setIsLoading(false);
@@ -48,7 +53,7 @@ const Jobs = () => {
       return 'tablet';
     }
     if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
-      return 'mobile';
+      return 'desktop';
     }
     return 'desktop';
   };
@@ -78,6 +83,13 @@ const Jobs = () => {
           {isLoading ? (
             <div className="flex justify-center items-center py-12">
               <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 bg-muted/30 rounded-lg">
+              <h3 className="text-xl font-semibold mb-2">Kunde inte hämta jobb</h3>
+              <p className="text-muted-foreground">
+                {error}
+              </p>
             </div>
           ) : jobs.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

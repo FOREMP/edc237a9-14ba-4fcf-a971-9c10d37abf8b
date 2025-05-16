@@ -35,7 +35,12 @@ class JobsServiceCore {
   // Get a single job by ID
   async getJobById(id: string): Promise<Job | null> {
     try {
-      console.log("Fetching job with ID:", id);
+      console.log("JobsServiceCore: Fetching job with ID:", id);
+      if (!id) {
+        console.error("getJobById called with empty or null ID");
+        return null;
+      }
+      
       // First try to find the job
       const { data, error } = await supabase
         .from('jobs')
@@ -51,11 +56,10 @@ class JobsServiceCore {
       
       if (!data) {
         console.error("No job found with ID:", id);
-        toast.error("Jobbet kunde inte hittas");
         return null;
       }
       
-      console.log("Fetched job by ID:", data?.id);
+      console.log("JobsServiceCore: Successfully fetched job by ID:", id);
       
       // Convert database job to our Job type
       return this.mapDbJobToJobType(data);
@@ -92,24 +96,34 @@ class JobsServiceCore {
 
   // Helper method to map database job record to our Job type
   protected mapDbJobToJobType(job: any): Job {
+    if (!job) {
+      console.error("Attempted to map null or undefined job object");
+      throw new Error("Invalid job data received from database");
+    }
+    
     // Make sure to explicitly cast job_type to JobType to maintain type safety
-    return {
-      id: job.id,
-      companyId: job.company_id,
-      title: job.title,
-      description: job.description,
-      requirements: job.requirements || '',
-      jobType: job.job_type as JobType, // Explicitly cast to JobType enum
-      educationRequired: job.education_required,
-      location: job.location,
-      salary: job.salary || '',
-      email: job.email || '',
-      phone: job.phone || '',
-      createdAt: new Date(job.created_at),
-      updatedAt: new Date(job.updated_at),
-      companyName: job.company_name,
-      status: job.status as JobStatus
-    };
+    try {
+      return {
+        id: job.id,
+        companyId: job.company_id,
+        title: job.title,
+        description: job.description,
+        requirements: job.requirements || '',
+        jobType: job.job_type as JobType, // Explicitly cast to JobType enum
+        educationRequired: job.education_required,
+        location: job.location,
+        salary: job.salary || '',
+        email: job.email || '',
+        phone: job.phone || '',
+        createdAt: new Date(job.created_at),
+        updatedAt: new Date(job.updated_at),
+        companyName: job.company_name,
+        status: job.status as JobStatus
+      };
+    } catch (error) {
+      console.error("Error mapping job data:", error, job);
+      throw new Error("Failed to process job data from database");
+    }
   }
 }
 
