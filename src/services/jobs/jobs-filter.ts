@@ -74,7 +74,7 @@ export class JobsFilterService {
         console.log("JobsFilterService: No jobs found matching filter criteria");
       }
       
-      // Convert to our Job type with proper mapping
+      // Convert to our Job type with proper casting
       return data ? data.map(job => ({
         id: job.id,
         companyId: job.company_id,

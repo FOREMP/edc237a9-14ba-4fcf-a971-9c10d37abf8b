@@ -1,5 +1,6 @@
+
 import { useState, useEffect, useCallback } from "react";
-import { Job } from "@/types";
+import { Job, JobType, JobStatus } from "@/types";
 import { jobsService } from "@/services/jobs";
 import { toast } from "sonner";
 import { isAdminEmail } from "@/utils/adminEmails";
@@ -29,16 +30,16 @@ export const useAdminJobs = () => {
       }
 
       // Test database access with a simple query
-      const { data: jobsCountData, error: jobsCountError } = await supabase
+      const { count, error: jobsCountError } = await supabase
         .from('jobs')
-        .select('count', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true });
 
       if (jobsCountError) {
         console.error("Database access test failed:", jobsCountError);
         return false;
       }
 
-      console.log("Database access verified successfully, jobs count:", jobsCountData?.count);
+      console.log("Database access verified successfully, jobs count:", count);
       return true;
     } catch (err) {
       console.error("Error verifying database access:", err);
@@ -121,14 +122,14 @@ export const useAdminJobs = () => {
       
       console.log("All jobs fetched directly:", data.length);
       
-      // Convert to our Job type
-      const mappedJobs = data.map(job => ({
+      // Convert to our Job type with proper type casting
+      const mappedJobs: Job[] = data.map(job => ({
         id: job.id,
         companyId: job.company_id,
         title: job.title,
         description: job.description,
         requirements: job.requirements || '',
-        jobType: job.job_type,
+        jobType: job.job_type as JobType,
         educationRequired: job.education_required,
         location: job.location,
         salary: job.salary || '',
@@ -137,7 +138,7 @@ export const useAdminJobs = () => {
         createdAt: new Date(job.created_at),
         updatedAt: new Date(job.updated_at),
         companyName: job.company_name,
-        status: job.status
+        status: job.status as JobStatus
       }));
       
       // Keep a copy of all jobs for debugging and reference
@@ -197,11 +198,11 @@ export const useAdminJobs = () => {
       
       // Update local state - both the jobs array and the allJobs array
       setJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status } : job
+        job.id === jobId ? { ...job, status: status as JobStatus } : job
       ));
       
       setAllJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status } : job
+        job.id === jobId ? { ...job, status: status as JobStatus } : job
       ));
       
       toast.success(
@@ -231,3 +232,4 @@ export const useAdminJobs = () => {
     updateJobStatus,
   };
 };
+
