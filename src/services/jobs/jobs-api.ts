@@ -1,3 +1,4 @@
+
 import { JobsManagementService } from "./jobs-management";
 import { JobsFilterService } from "./jobs-filter";
 import { Job, JobFilter, JobFormData, JobStatus } from "@/types";
@@ -29,8 +30,25 @@ class JobsServiceApi {
   }
   
   async getJobById(id: string): Promise<Job | null> {
-    // Use the enhanced method from JobsFilterService which handles both authenticated and public access
-    return this.filterService.getJobById(id);
+    console.log("JobsServiceApi: Getting job by ID:", id);
+    if (!id) {
+      console.error("Invalid job ID provided:", id);
+      return null;
+    }
+    
+    try {
+      // Use the enhanced method from JobsFilterService which handles both authenticated and public access
+      const job = await this.filterService.getJobById(id);
+      if (job) {
+        console.log("JobsServiceApi: Successfully retrieved job:", job.id);
+      } else {
+        console.log("JobsServiceApi: No job found with ID:", id);
+      }
+      return job;
+    } catch (error) {
+      console.error("JobsServiceApi: Error getting job by ID:", error);
+      return null;
+    }
   }
   
   async getCompanyJobs(): Promise<Job[]> {

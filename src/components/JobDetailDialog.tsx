@@ -46,15 +46,31 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   const { user, isAdmin } = useAuth();
   const [fetchAttempted, setFetchAttempted] = useState(false);
 
+  // Add debug logging
   useEffect(() => {
+    if (open && jobId) {
+      console.log("JobDetailDialog opened for job ID:", jobId);
+    }
+  }, [open, jobId]);
+
+  useEffect(() => {
+    // Clear previous job data when closed to prevent flash of old data
+    if (!open) {
+      setJob(null);
+      setError(null);
+      setFetchAttempted(false);
+      return;
+    }
+    
+    // Skip fetch if no jobId or dialog not open
+    if (!jobId || !open) {
+      return;
+    }
+
     let isMounted = true;
     let timeoutId: NodeJS.Timeout | null = null;
     
     async function fetchJob() {
-      if (!jobId || !open) {
-        return;
-      }
-      
       if (isMounted) {
         setIsLoading(true);
         setError(null);
@@ -70,25 +86,23 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           toast.error("Förfrågan tog för lång tid. Försök igen.");
           setFetchAttempted(true);
         }
-      }, 15000); // Increased timeout to 15 seconds
+      }, 15000);
       
       try {
-        console.log("Fetching job details for ID:", jobId);
+        console.log("JobDetailDialog: Fetching job details for ID:", jobId);
         
-        // Check authentication status before fetching
-        const { data: sessionData } = await supabase.auth.getSession();
-        console.log("Auth state before job fetch:", {
-          hasSession: !!sessionData.session,
-          userId: sessionData.session?.user?.id || 'none'
-        });
-        
-        // If we have a session, refresh it
-        if (sessionData.session) {
-          await supabase.auth.refreshSession();
-          console.log("Session refreshed before job fetch");
+        // Try to refresh session before fetching
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          console.log("JobDetailDialog: Auth state before job fetch:", {
+            hasSession: !!sessionData.session,
+            userId: sessionData.session?.user?.id || 'none'
+          });
+        } catch (err) {
+          console.log("JobDetailDialog: Session check error:", err);
         }
         
-        // Direct job fetch using the updated JobsFilterService
+        // Directly fetch job with error handling
         const jobData = await jobsService.getJobById(jobId);
         
         // Guard against component unmounting during async operation
@@ -100,7 +114,7 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
         }
         
         if (!jobData) {
-          console.error("No job data returned for ID:", jobId);
+          console.error("JobDetailDialog: No job data returned for ID:", jobId);
           setError("Jobbet kunde inte hittas");
           toast.error("Jobbet kunde inte hittas");
           setFetchAttempted(true);
@@ -108,9 +122,10 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           return;
         }
         
-        console.log("Job data retrieved successfully:", jobData);
+        console.log("JobDetailDialog: Job data retrieved successfully:", jobData);
         setJob(jobData);
         setFetchAttempted(true);
+        setIsLoading(false);
         
         // Track this as a job detail view
         const deviceType = getDeviceType();
@@ -118,14 +133,11 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
       } catch (error) {
         if (!isMounted) return;
         
-        console.error("Error fetching job:", error);
+        console.error("JobDetailDialog: Error fetching job:", error);
         setError("Ett fel uppstod vid hämtning av jobbet");
         toast.error("Kunde inte ladda jobbinformation");
         setFetchAttempted(true);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     }
     
@@ -157,20 +169,11 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   
   const handleRetryFetch = () => {
     if (jobId) {
+      console.log("JobDetailDialog: Retrying fetch for job ID:", jobId);
       setError(null);
       setIsLoading(true);
       setFetchAttempted(false);
-      
-      // Force re-run of the effect
-      const tempId = jobId;
       setJob(null);
-      
-      // Use a small delay to ensure the state updates before re-triggering the effect
-      setTimeout(() => {
-        if (open) {
-          console.log("Retrying job fetch for ID:", tempId);
-        }
-      }, 100);
     }
   };
 
@@ -182,6 +185,7 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           <DialogClose className="absolute right-4 top-4" />
           <div className="flex justify-center items-center py-12">
             <div className="w-8 h-8 rounded-full border-4 border-t-primary border-primary/30 animate-spin"></div>
+            <span className="ml-3 text-muted-foreground">Hämtar jobbinformation...</span>
           </div>
         </DialogContent>
       </Dialog>
@@ -231,6 +235,7 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           <DialogClose className="absolute right-4 top-4" />
           <div className="flex justify-center items-center py-12">
             <div className="w-8 h-8 rounded-full border-4 border-t-primary border-primary/30 animate-spin"></div>
+            <span className="ml-3 text-muted-foreground">Laddar...</span>
           </div>
         </DialogContent>
       </Dialog>

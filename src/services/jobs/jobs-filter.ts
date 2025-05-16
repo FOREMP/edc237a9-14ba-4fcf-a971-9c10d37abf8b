@@ -1,4 +1,3 @@
-
 import { Job, JobFilter, JobType, JobStatus } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -78,23 +77,7 @@ export class JobsFilterService {
         console.log(`JobsFilterService: Found ${data.length} jobs after filtering`);
         
         // Map the data to our Job type with proper type casting
-        return data.map(job => ({
-          id: job.id,
-          companyId: job.company_id,
-          title: job.title,
-          description: job.description,
-          requirements: job.requirements || '',
-          jobType: job.job_type as JobType,
-          educationRequired: job.education_required,
-          location: job.location,
-          salary: job.salary || '',
-          email: job.email || '',
-          phone: job.phone || '',
-          createdAt: new Date(job.created_at),
-          updatedAt: new Date(job.updated_at),
-          companyName: job.company_name,
-          status: job.status as JobStatus
-        }));
+        return data.map(job => this.mapJobData(job));
       } catch (queryError) {
         console.error("Error with standard query:", queryError);
         throw queryError;
@@ -118,51 +101,62 @@ export class JobsFilterService {
         if (sessionData.session) {
           console.log("Found active session, refreshing before job detail fetch");
           await supabase.auth.refreshSession();
+        } else {
+          console.log("No active session found, continuing as public");
         }
       } catch (err) {
         console.log("Session check error, continuing with job detail fetch:", err);
       }
       
-      // Query for the specific job
-      const { data, error } = await supabase
+      // Try the authenticated query first which can access all jobs the user has permission for
+      try {
+        console.log(`Attempting to fetch job with ID: ${id} (authenticated or public)`);
+        
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('id', id)
+          .single();
+        
+        if (error) {
+          console.error("Error fetching job by ID:", error);
+          
+          // If there's a problem with the query itself (not RLS), throw the error
+          if (error.code !== 'PGRST116') {
+            throw error;
+          }
+          
+          // Otherwise, try the public fallback approach
+          console.log("Attempting fallback for public job access");
+        } else if (data) {
+          console.log("Successfully retrieved job data:", data.id);
+          return this.mapJobData(data);
+        }
+      } catch (queryError) {
+        console.error("Error with authenticated query:", queryError);
+      }
+      
+      // Fallback for public access - explicitly filter for approved jobs
+      console.log("Trying public fallback query for job ID:", id);
+      const { data: publicData, error: publicError } = await supabase
         .from('jobs')
         .select('*')
         .eq('id', id)
+        .eq('status', 'approved')
         .single();
-      
-      if (error) {
-        console.error("Error fetching job by ID:", error);
         
-        // If the error is related to RLS, try a fallback approach for public access
-        if (error.code === 'PGRST116') {
-          console.log("Attempting fallback for public job access");
-          
-          // Try to get the job if it's approved (public access)
-          const { data: publicData, error: publicError } = await supabase
-            .from('jobs')
-            .select('*')
-            .eq('id', id)
-            .eq('status', 'approved')
-            .single();
-            
-          if (publicError || !publicData) {
-            console.error("Failed to fetch job with public access:", publicError);
-            return null;
-          }
-          
-          // Successfully retrieved public job
-          return this.mapJobData(publicData);
-        }
-        
+      if (publicError) {
+        console.error("Failed to fetch job with public access:", publicError);
         return null;
       }
       
-      if (!data) {
+      if (!publicData) {
         console.log("No job found with ID:", id);
         return null;
       }
       
-      return this.mapJobData(data);
+      console.log("Successfully retrieved job via public access:", publicData.id);
+      return this.mapJobData(publicData);
     } catch (error) {
       console.error("Error getting job by ID:", error);
       return null;
