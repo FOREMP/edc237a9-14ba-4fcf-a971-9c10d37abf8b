@@ -1,4 +1,3 @@
-
 import { Job } from "@/types";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -161,6 +160,7 @@ const JobCard = ({
             variant="outline" 
             className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary"
             onClick={handleJobDetailClick}
+            disabled={!id} // Disable if no ID is available
           >
             Visa mer
           </Button>

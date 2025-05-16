@@ -42,7 +42,7 @@ class JobsServiceCore {
         return null;
       }
       
-      // First try to find the job
+      // Using maybeSingle instead of single to avoid error when no record is found
       const { data, error } = await supabase
         .from('jobs')
         .select('*')

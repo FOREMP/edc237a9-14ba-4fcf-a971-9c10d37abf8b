@@ -5,7 +5,7 @@ import JobCard from "@/components/JobCard";
 import JobFilter from "@/components/JobFilter";
 import { Job, JobFilter as JobFilterType } from "@/types";
 import { jobsService } from "@/services/jobs";
-import { Loader2Icon, AlertCircle } from "lucide-react";
+import { Loader2Icon, AlertCircle, RefreshCw } from "lucide-react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import { toast } from "sonner";
 
@@ -108,8 +108,9 @@ const Jobs = () => {
               </p>
               <button 
                 onClick={handleRetry}
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="px-4 py-2 flex items-center gap-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
               >
+                <RefreshCw className="w-4 h-4" />
                 Försök igen
               </button>
             </div>

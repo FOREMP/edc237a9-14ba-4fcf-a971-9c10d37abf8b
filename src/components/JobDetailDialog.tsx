@@ -22,6 +22,7 @@ import {
   Phone,
   X,
   AlertCircle,
+  RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import { sv } from "date-fns/locale";
@@ -137,6 +138,25 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
 
   // Check if the current user is the owner of this job
   const isOwner = user && job && user.id === job.companyId;
+  
+  const handleRetryFetch = () => {
+    if (jobId) {
+      setError(null);
+      setIsLoading(true);
+      setFetchAttempted(false);
+      
+      // Force re-run of the effect
+      const tempId = jobId;
+      setJob(null);
+      
+      // Use a small delay to ensure the state updates before re-triggering the effect
+      setTimeout(() => {
+        if (open) {
+          console.log("Retrying job fetch for ID:", tempId);
+        }
+      }, 100);
+    }
+  };
 
   // Render loading state 
   if (isLoading) {
@@ -168,9 +188,19 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
             <p className="text-muted-foreground mb-4">
               {error ? error : "Jobbet kan ha tagits bort eller är inte längre tillgängligt."}
             </p>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Stäng
-            </Button>
+            <div className="flex gap-2 justify-center">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Stäng
+              </Button>
+              <Button 
+                variant="default" 
+                onClick={handleRetryFetch}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Försök igen
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
