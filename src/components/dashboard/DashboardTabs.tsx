@@ -31,6 +31,7 @@ const DashboardTabs = ({
         <TabsTrigger value="pending">Under granskning</TabsTrigger>
         <TabsTrigger value="approved">Godkända</TabsTrigger>
         <TabsTrigger value="rejected">Nekade</TabsTrigger>
+        <TabsTrigger value="expired">Utgångna</TabsTrigger>
       </TabsList>
       
       <TabsContent value="company">
@@ -49,11 +50,13 @@ const DashboardTabs = ({
         />
       </TabsContent>
       
-      {['pending', 'approved', 'rejected'].map((status) => (
+      {['pending', 'approved', 'rejected', 'expired'].map((status) => (
         <TabsContent key={status} value={status}>
           <h2 className="text-xl font-semibold mb-4">
             {status === 'pending' ? 'Under granskning' : 
-             status === 'approved' ? 'Godkända' : 'Nekade'} annonser
+             status === 'approved' ? 'Godkända' : 
+             status === 'rejected' ? 'Nekade' : 
+             'Utgångna'} annonser
           </h2>
           <JobList 
             jobs={jobs}
@@ -70,4 +73,3 @@ const DashboardTabs = ({
 };
 
 export default DashboardTabs;
-

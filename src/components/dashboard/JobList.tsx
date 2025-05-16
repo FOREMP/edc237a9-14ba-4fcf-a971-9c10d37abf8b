@@ -33,7 +33,9 @@ const JobList = ({ jobs, isLoading, onEdit, onDelete, onCreateClick, tabValue }:
               ? "Du har inga annonser som väntar på godkännande."
               : tabValue === 'approved'
                 ? "Du har inga godkända annonser ännu."
-                : "Du har inga nekade annonser."}
+                : tabValue === 'expired'
+                  ? "Du har inga utgångna annonser."
+                  : "Du har inga nekade annonser."}
         </p>
         {(tabValue === 'all' || tabValue === 'pending' || tabValue === 'approved') && (
           <Button onClick={onCreateClick}>

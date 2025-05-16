@@ -30,10 +30,13 @@ const JobCard = ({
   onApprove,
   onReject 
 }: JobCardProps) => {
-  const { id, title, companyName, location, jobType, educationRequired, salary, description, createdAt, status } = job;
+  const { id, title, companyName, location, jobType, educationRequired, salary, description, createdAt, status, expiresAt } = job;
   const { isAdmin } = useAuth();
   const { trackJobView } = useJobViews();
   const [showJobDetail, setShowJobDetail] = useState(false);
+
+  // Check if job is expired
+  const isExpired = expiresAt && new Date(expiresAt) < new Date();
 
   const typeClassNames: Record<typeof jobType, string> = {
     fulltime: "job-card-fulltime",
@@ -111,11 +114,18 @@ const JobCard = ({
 
   return (
     <>
-      <Card className={cn("job-card", typeClassNames[jobType])} id={`job-card-${id}`}>
+      <Card className={cn(
+        "job-card", 
+        typeClassNames[jobType],
+        isExpired ? "opacity-70" : ""
+      )} id={`job-card-${id}`}>
         <CardHeader>
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-xl font-semibold">{title}</CardTitle>
+              <CardTitle className="text-xl font-semibold">
+                {title}
+                {isExpired && <span className="ml-2 text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded-full">Utgången</span>}
+              </CardTitle>
               <CardDescription className="text-base">{companyName}</CardDescription>
             </div>
             <div className="flex gap-2">
@@ -142,6 +152,13 @@ const JobCard = ({
               <Calendar size={16} />
               <span>Publicerad: {dateFormatted}</span>
             </div>
+
+            {isExpired && (
+              <div className="flex items-center space-x-2 text-sm text-rose-500">
+                <Calendar size={16} />
+                <span>Utgått: {format(new Date(expiresAt), 'PPP', { locale: sv })}</span>
+              </div>
+            )}
             
             {educationRequired && (
               <div className="flex items-center space-x-2 text-sm">
@@ -170,6 +187,7 @@ const JobCard = ({
               <Button 
                 variant="outline" 
                 onClick={() => onEdit && onEdit(job)}
+                disabled={isExpired && status !== 'approved'} // Only allow editing expired jobs if they were approved
               >
                 Redigera
               </Button>

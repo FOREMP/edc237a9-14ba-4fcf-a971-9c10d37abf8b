@@ -45,8 +45,12 @@ const Jobs = () => {
       await ensureSession();
       
       console.log("Fetching jobs with filter:", filter);
-      // Only show approved jobs in the public jobs list
-      const filteredJobs = await jobsService.getFilteredJobs({...filter, status: 'approved'});
+      // Only show approved AND non-expired jobs in the public jobs list
+      const filteredJobs = await jobsService.getFilteredJobs({
+        ...filter, 
+        status: 'approved',
+        showExpired: false  // Explicitly set to false for public page
+      });
       console.log("Fetched approved jobs:", filteredJobs.length);
       
       // Add more clear logging

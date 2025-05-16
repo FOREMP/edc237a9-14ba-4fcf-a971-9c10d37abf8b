@@ -30,6 +30,11 @@ export class JobsFilterService {
           query = query.eq('status', filter.status);
         }
         
+        // Apply expiration filter - only show non-expired jobs by default
+        if (!filter.showExpired) {
+          query = query.gt('expires_at', new Date().toISOString());
+        }
+        
         // Apply search filter if provided
         if (filter.search && filter.search.trim()) {
           const searchTerm = `%${filter.search.trim()}%`;
@@ -151,7 +156,8 @@ export class JobsFilterService {
       createdAt: new Date(jobData.created_at),
       updatedAt: new Date(jobData.updated_at),
       companyName: jobData.company_name,
-      status: jobData.status as JobStatus
+      status: jobData.status as JobStatus,
+      expiresAt: new Date(jobData.expires_at) // Added expiresAt mapping
     };
   }
 }

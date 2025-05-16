@@ -1,4 +1,3 @@
-
 import { Job, JobFormData, JobStatus, JobType } from "@/types";
 import { authService } from "../auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -301,6 +300,115 @@ export class JobsManagementService extends JobsServiceCore {
     } catch (error) {
       console.error("Error updating job status:", error);
       return null;
+    }
+  }
+
+  // Get all jobs for the current company including expired ones
+  async getAllCompanyJobs(showExpired: boolean = false): Promise<Job[]> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      console.error("No authenticated user found");
+      return [];
+    }
+
+    try {
+      console.log("getAllCompanyJobs for user:", {
+        id: currentUser.id,
+        email: currentUser.email,
+        role: currentUser.role,
+        showExpired
+      });
+
+      // Refresh session to ensure we have the latest token
+      try {
+        await supabase.auth.refreshSession();
+        console.log("Session refreshed before job fetch");
+      } catch (refreshError) {
+        console.log("Session refresh failed, continuing with job fetch");
+      }
+
+      // Enhanced admin check - check both role AND email
+      const isAdmin = currentUser.role === 'admin' || (currentUser.email && isAdminEmail(currentUser.email));
+      
+      // Build the query
+      let query = supabase.from('jobs').select('*');
+      
+      // Filter by company_id for non-admin users
+      if (!isAdmin) {
+        query = query.eq('company_id', currentUser.id);
+      }
+      
+      // Apply expiration filter if not showing expired jobs
+      if (!showExpired) {
+        query = query.gt('expires_at', new Date().toISOString());
+      }
+      
+      // Execute the query
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("Error fetching company jobs:", error);
+        return [];
+      }
+      
+      console.log(`Got ${showExpired ? 'all' : 'non-expired'} company jobs:`, data?.length || 0);
+      
+      // Convert data to our Job type
+      return data?.map(job => this.mapDbJobToJobType(job)) || [];
+    } catch (error) {
+      console.error("Error fetching company jobs:", error);
+      return [];
+    }
+  }
+  
+  // Get expired jobs for the current company
+  async getExpiredJobs(): Promise<Job[]> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      console.error("No authenticated user found");
+      return [];
+    }
+
+    try {
+      console.log("getExpiredJobs for user:", {
+        id: currentUser.id,
+        email: currentUser.email,
+        role: currentUser.role
+      });
+
+      // Refresh session to ensure we have the latest token
+      try {
+        await supabase.auth.refreshSession();
+      } catch (refreshError) {
+        console.log("Session refresh failed, continuing with job fetch");
+      }
+
+      // Build the query
+      let query = supabase
+        .from('jobs')
+        .select('*')
+        .lte('expires_at', new Date().toISOString());
+      
+      // Filter by company_id for non-admin users
+      if (currentUser.role !== 'admin') {
+        query = query.eq('company_id', currentUser.id);
+      }
+      
+      // Execute the query
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("Error fetching expired jobs:", error);
+        return [];
+      }
+      
+      console.log("Got expired jobs:", data?.length || 0);
+      
+      // Convert data to our Job type
+      return data?.map(job => this.mapDbJobToJobType(job)) || [];
+    } catch (error) {
+      console.error("Error fetching expired jobs:", error);
+      return [];
     }
   }
 }

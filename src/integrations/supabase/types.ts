@@ -80,6 +80,7 @@ export type Database = {
           description: string
           education_required: boolean
           email: string | null
+          expires_at: string
           id: string
           job_type: string
           location: string
@@ -97,6 +98,7 @@ export type Database = {
           description: string
           education_required?: boolean
           email?: string | null
+          expires_at: string
           id?: string
           job_type: string
           location: string
@@ -114,6 +116,7 @@ export type Database = {
           description?: string
           education_required?: boolean
           email?: string | null
+          expires_at?: string
           id?: string
           job_type?: string
           location?: string
@@ -243,6 +246,10 @@ export type Database = {
       }
       is_admin_by_email: {
         Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_job_owner: {
+        Args: { job_id: string }
         Returns: boolean
       }
       reset_post_count: {

@@ -16,9 +16,17 @@ export const useDashboardJobs = (activeTab: string) => {
   const fetchJobs = async () => {
     setIsLoading(true);
     try {
-      // Hämta alla företagsjobb
-      const companyJobs = await jobsService.getCompanyJobs();
-      console.log("Fetched company jobs:", companyJobs);
+      let companyJobs: Job[] = [];
+      
+      // Fetch appropriate jobs based on the active tab
+      if (activeTab === "expired") {
+        console.log("Fetching expired jobs");
+        companyJobs = await jobsService.getExpiredJobs();
+      } else {
+        // Hämta alla företagsjobb (non-expired by default)
+        companyJobs = await jobsService.getCompanyJobs();
+        console.log("Fetched company jobs:", companyJobs);
+      }
       
       // Filtrera jobb baserat på aktiv flik
       let filteredJobs = companyJobs;
@@ -30,6 +38,8 @@ export const useDashboardJobs = (activeTab: string) => {
       } else if (activeTab === "rejected") {
         filteredJobs = companyJobs.filter(job => job.status === "rejected");
       }
+      // For "expired" tab, we already fetched the right jobs
+      // For "all" tab, we include all non-expired jobs
       
       console.log("Filtered jobs for tab", activeTab, ":", filteredJobs);
       setJobs(filteredJobs);

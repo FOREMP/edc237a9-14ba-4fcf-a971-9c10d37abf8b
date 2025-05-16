@@ -1,4 +1,3 @@
-
 export type UserRole = 'company' | 'admin';
 
 export type User = {
@@ -33,9 +32,10 @@ export type Job = {
   updatedAt: Date;
   companyName: string;
   status: JobStatus;
+  expiresAt: Date; // Added expiresAt field
 };
 
-export type JobFormData = Omit<Job, 'id' | 'companyId' | 'createdAt' | 'updatedAt' | 'companyName' | 'status'>;
+export type JobFormData = Omit<Job, 'id' | 'companyId' | 'createdAt' | 'updatedAt' | 'companyName' | 'status' | 'expiresAt'>;
 
 export type JobFilter = {
   search?: string;
@@ -44,6 +44,7 @@ export type JobFilter = {
   location?: string;
   sortBy?: 'newest' | 'oldest' | 'relevant';
   status?: JobStatus;
+  showExpired?: boolean; // Added showExpired filter option
 };
 
 export type UserPreferences = {

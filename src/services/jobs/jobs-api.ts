@@ -1,4 +1,3 @@
-
 import { JobsManagementService } from "./jobs-management";
 import { JobsFilterService } from "./jobs-filter";
 import { Job, JobFilter, JobFormData, JobStatus } from "@/types";
@@ -62,7 +61,21 @@ class JobsServiceApi {
       console.log("Session refresh attempt failed, continuing with fetch", err);
     }
     
-    return this.managementService.getCompanyJobs();
+    // By default, only get non-expired jobs
+    return this.managementService.getAllCompanyJobs(false);
+  }
+  
+  async getExpiredJobs(): Promise<Job[]> {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (session.session) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (err) {
+      console.log("Session refresh attempt failed, continuing with fetch", err);
+    }
+    
+    return this.managementService.getExpiredJobs();
   }
   
   async getPendingJobs(): Promise<Job[]> {

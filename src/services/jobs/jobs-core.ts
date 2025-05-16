@@ -13,7 +13,8 @@ class JobsServiceCore {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
-        .eq('status', 'approved');
+        .eq('status', 'approved')
+        .gt('expires_at', new Date().toISOString());
         
       if (error) {
         console.error("Error fetching jobs:", error);
@@ -136,7 +137,8 @@ class JobsServiceCore {
         createdAt: new Date(job.created_at),
         updatedAt: new Date(job.updated_at),
         companyName: job.company_name,
-        status: job.status as JobStatus
+        status: job.status as JobStatus,
+        expiresAt: new Date(job.expires_at) // Added expiresAt mapping
       };
       
       console.log("Successfully mapped job:", mappedJob.id, mappedJob.title);
