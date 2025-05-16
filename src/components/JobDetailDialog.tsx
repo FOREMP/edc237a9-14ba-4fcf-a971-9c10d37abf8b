@@ -45,7 +45,7 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   const { user, isAdmin } = useAuth();
   const [fetchAttempted, setFetchAttempted] = useState(false);
 
-  // Add debug logging
+  // Add debug logging - this is useful for troubleshooting
   useEffect(() => {
     if (open && jobId) {
       console.log("JobDetailDialog opened for job ID:", jobId);
@@ -72,9 +72,11 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     const fetchJob = async () => {
       if (!isMounted) return;
       
+      // Only change state if component is still mounted
       setIsLoading(true);
       setError(null);
       setFetchAttempted(false);
+      // Important: don't reset job here to prevent flickering
       
       try {
         console.log("JobDetailDialog: Fetching job details for ID:", jobId);
@@ -100,8 +102,11 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           console.error("JobDetailDialog: No job data returned for ID:", jobId);
           setError("Jobbet kunde inte hittas");
           toast.error("Jobbet kunde inte hittas");
+          setJob(null); // Clear job data if not found
         } else {
           console.log("JobDetailDialog: Job data retrieved successfully:", jobData);
+          
+          // Important: Set job data before setting loading to false
           setJob(jobData);
           
           // Track this as a job detail view
@@ -114,10 +119,11 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
         console.error("JobDetailDialog: Error fetching job:", error);
         setError("Ett fel uppstod vid hämtning av jobbet");
         toast.error("Kunde inte ladda jobbinformation");
+        setJob(null); // Clear job data on error
       } finally {
         if (isMounted) {
-          setIsLoading(false);
           setFetchAttempted(true);
+          setIsLoading(false);
         }
       }
     };
@@ -142,9 +148,6 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     return 'desktop';
   };
 
-  // Check if the current user is the owner of this job
-  const isOwner = user && job && user.id === job.companyId;
-  
   const handleRetryFetch = () => {
     if (jobId) {
       console.log("JobDetailDialog: Retrying fetch for job ID:", jobId);
@@ -155,8 +158,8 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     }
   };
 
-  // Render loading state 
-  if (isLoading) {
+  // Render loading state - simplified to prevent flickering
+  if (isLoading && !job) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
