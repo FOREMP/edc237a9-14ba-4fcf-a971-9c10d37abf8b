@@ -61,19 +61,20 @@ const AdminDashboard = () => {
         email: sessionData.session.user.email
       });
       
-      // Test access to the jobs table
-      const { count, error: countError } = await supabase
+      // Test access with a simple query
+      const { data, error } = await supabase
         .from('jobs')
-        .select('*', { count: 'exact', head: true });
+        .select('id')
+        .limit(1);
         
-      if (countError) {
-        console.error("Database access test failed:", countError);
+      if (error) {
+        console.error("Database access test failed:", error);
         setPermissionIssue(true);
-        toast.error("Databasåtkomst nekad: " + countError.message);
+        toast.error("Databasåtkomst nekad: " + error.message);
         return false;
       }
       
-      console.log("Database access verified, job count:", count);
+      console.log("Database access verified successfully");
       setPermissionIssue(false);
       return true;
     } catch (error) {
@@ -96,7 +97,7 @@ const AdminDashboard = () => {
         }
       });
     }
-  }, [isAuthenticated, user?.id, adminCheckComplete]);
+  }, [isAuthenticated, user?.id, adminCheckComplete, fetchJobs]);
 
   // Enhanced logging
   useEffect(() => {
@@ -109,9 +110,10 @@ const AdminDashboard = () => {
       email: user?.email,
       isAdminByEmail: user?.email ? isAdminEmail(user.email) : false,
       role: user?.role,
-      permissionIssue
+      permissionIssue,
+      jobsCount: allJobs.length
     });
-  }, [isAuthenticated, hasAdminAccess, isAdmin, authLoading, adminCheckComplete, user, permissionIssue]);
+  }, [isAuthenticated, hasAdminAccess, isAdmin, authLoading, adminCheckComplete, user, permissionIssue, allJobs.length]);
 
   // Make sure only admins can access this page
   useEffect(() => {
@@ -162,6 +164,8 @@ const AdminDashboard = () => {
       // Then retry fetching jobs
       await verifySession();
       await fetchJobs();
+      
+      toast.success("Data uppdaterad");
     } catch (error) {
       console.error("Manual refresh failed:", error);
       toast.error("Kunde inte uppdatera");

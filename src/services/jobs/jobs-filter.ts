@@ -20,11 +20,15 @@ export class JobsFilterService {
         console.log("Session check error, continuing with job fetch:", err);
       }
       
-      // Start with a base query
+      // Start with a base query - use count parameter to get exact count
       let query = supabase.from('jobs').select('*');
       
       // Apply status filter (default to approved for public listing)
-      query = query.eq('status', filter.status || 'approved');
+      if (filter.status) {
+        query = query.eq('status', filter.status);
+      } else {
+        query = query.eq('status', 'approved');
+      }
 
       // Apply search filter
       if (filter.search && filter.search.trim()) {

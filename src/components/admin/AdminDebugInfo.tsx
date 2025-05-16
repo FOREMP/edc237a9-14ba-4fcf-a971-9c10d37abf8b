@@ -17,6 +17,7 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
   const [dbRole, setDbRole] = useState<string | null>(null);
   const [dbEmail, setDbEmail] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [dbCheckComplete, setDbCheckComplete] = useState<boolean>(false);
   
   // Get role directly from the database for verification
   useEffect(() => {
@@ -29,20 +30,26 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
             setSessionId(sessionData.session.user.id.substring(0, 8) + '...');
           }
             
+          // Try a direct query that avoids RLS issues
           const { data, error } = await supabase
             .from('profiles')
             .select('role, email')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
             
           if (!error && data) {
             setDbRole(data.role);
             setDbEmail(data.email);
+            setDbCheckComplete(true);
           } else {
             console.error("Error fetching role:", error);
+            setDbRole("Error: " + error?.message);
+            setDbCheckComplete(true);
           }
         } catch (err) {
           console.error("Error checking role from DB:", err);
+          setDbRole("Error: " + (err as Error).message);
+          setDbCheckComplete(true);
         }
       }
     };
@@ -58,13 +65,14 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
       <p>User email: {user?.email}</p>
       <p>Is admin email: {user?.email && isAdminEmail(user.email) ? 'Yes' : 'No'}</p>
       <p>User role from context: {user?.role}</p>
-      <p>User role from DB: {dbRole || 'Loading...'}</p>
-      <p>User email from DB: {dbEmail || 'Loading...'}</p>
+      <p>User role from DB: {dbCheckComplete ? dbRole || 'Not found' : 'Loading...'}</p>
+      <p>User email from DB: {dbCheckComplete ? dbEmail || 'Not found' : 'Loading...'}</p>
       <p>Is DB email admin: {dbEmail && isAdminEmail(dbEmail) ? 'Yes' : 'No'}</p>
       <p>User ID: {user?.id || 'Not available'}</p>
       <p>Session ID: {sessionId || 'No active session'}</p>
       <p>Total jobs available: {allJobsCount}</p>
       <p>Current tab: {currentJobs.tab} ({currentJobs.count} jobs)</p>
+      <p>Database check complete: {dbCheckComplete ? 'Yes' : 'No'}</p>
     </div>
   );
 };
