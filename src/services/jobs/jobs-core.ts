@@ -9,7 +9,7 @@ class JobsServiceCore {
   async getAllJobs(): Promise<Job[]> {
     try {
       console.log("JobsServiceCore: Getting all approved jobs");
-      // For public view, only return approved jobs - this will work with our unified policy
+      // With our new policies, this will return only approved jobs for public viewing
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -48,6 +48,14 @@ class JobsServiceCore {
         hasSession: !!sessionData.session,
         userId: sessionData.session?.user?.id || 'none'
       });
+      
+      // Attempt to refresh session before fetching (can help with auth issues)
+      try {
+        await supabase.auth.refreshSession();
+        console.log("Session refreshed before job fetch");
+      } catch (refreshError) {
+        console.log("Session refresh failed, continuing with current session");
+      }
       
       // Using maybeSingle to avoid error when no record is found
       const { data, error } = await supabase

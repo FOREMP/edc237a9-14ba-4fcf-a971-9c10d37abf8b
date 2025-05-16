@@ -2,6 +2,7 @@
 import { JobsManagementService } from "./jobs-management";
 import { JobsFilterService } from "./jobs-filter";
 import { Job, JobFilter, JobFormData, JobStatus } from "@/types";
+import { supabase } from "@/integrations/supabase/client";
 
 // Main API class that combines all job service functionality
 class JobsServiceApi {
@@ -19,10 +20,30 @@ class JobsServiceApi {
   }
   
   async getJobById(id: string): Promise<Job | null> {
+    // Try to refresh session before getting a job (can help with permission issues)
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (session.session) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (err) {
+      console.log("Session refresh attempt failed, continuing with fetch", err);
+    }
+    
     return this.managementService.getJobById(id);
   }
   
   async getCompanyJobs(): Promise<Job[]> {
+    // Try to refresh session before getting company jobs
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (session.session) {
+        await supabase.auth.refreshSession();
+      }
+    } catch (err) {
+      console.log("Session refresh attempt failed, continuing with fetch", err);
+    }
+    
     return this.managementService.getCompanyJobs();
   }
   

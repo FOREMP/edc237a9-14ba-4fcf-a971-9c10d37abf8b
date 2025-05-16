@@ -28,6 +28,9 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
     }
     
     try {
+      // Force a session refresh to ensure we have the latest token
+      await supabase.auth.refreshSession();
+      
       // Then try database check as backup
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -147,7 +150,7 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
 
   return { 
     ...auth, 
-    isCheckingAuth: auth.isLoading || isCheckingAuth || !auth.adminCheckComplete,
+    isLoading: auth.isLoading || isCheckingAuth || !auth.adminCheckComplete,
     hasAdminAccess: hasAdminAccess || auth.isAdmin || (auth.user?.email ? isAdminEmail(auth.user.email) : false)
   };
 };
