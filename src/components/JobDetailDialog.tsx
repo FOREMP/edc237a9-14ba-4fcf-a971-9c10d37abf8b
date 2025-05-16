@@ -20,7 +20,6 @@ import {
   Banknote,
   Mail,
   Phone,
-  X,
   AlertCircle,
   RefreshCw
 } from "lucide-react";
@@ -54,11 +53,12 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   }, [open, jobId]);
 
   useEffect(() => {
-    // Clear previous job data when closed to prevent flash of old data
+    // Reset state when dialog is closed
     if (!open) {
       setJob(null);
       setError(null);
       setFetchAttempted(false);
+      setIsLoading(false);
       return;
     }
     
@@ -68,25 +68,13 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     }
 
     let isMounted = true;
-    let timeoutId: NodeJS.Timeout | null = null;
     
-    async function fetchJob() {
-      if (isMounted) {
-        setIsLoading(true);
-        setError(null);
-        setFetchAttempted(false);
-      }
+    const fetchJob = async () => {
+      if (!isMounted) return;
       
-      // Set a timeout to handle cases where the fetch never completes
-      timeoutId = setTimeout(() => {
-        if (isMounted && isLoading) {
-          console.error("Job fetch timeout for ID:", jobId);
-          setIsLoading(false);
-          setError("Timeout while fetching job information");
-          toast.error("Förfrågan tog för lång tid. Försök igen.");
-          setFetchAttempted(true);
-        }
-      }, 15000);
+      setIsLoading(true);
+      setError(null);
+      setFetchAttempted(false);
       
       try {
         console.log("JobDetailDialog: Fetching job details for ID:", jobId);
@@ -102,53 +90,43 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           console.log("JobDetailDialog: Session check error:", err);
         }
         
-        // Directly fetch job with error handling
+        // Fetch job data
         const jobData = await jobsService.getJobById(jobId);
         
         // Guard against component unmounting during async operation
         if (!isMounted) return;
         
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
         if (!jobData) {
           console.error("JobDetailDialog: No job data returned for ID:", jobId);
           setError("Jobbet kunde inte hittas");
           toast.error("Jobbet kunde inte hittas");
-          setFetchAttempted(true);
-          setIsLoading(false);
-          return;
+        } else {
+          console.log("JobDetailDialog: Job data retrieved successfully:", jobData);
+          setJob(jobData);
+          
+          // Track this as a job detail view
+          const deviceType = getDeviceType();
+          trackJobView(jobId, 'detail', deviceType);
         }
-        
-        console.log("JobDetailDialog: Job data retrieved successfully:", jobData);
-        setJob(jobData);
-        setFetchAttempted(true);
-        setIsLoading(false);
-        
-        // Track this as a job detail view
-        const deviceType = getDeviceType();
-        trackJobView(jobId, 'detail', deviceType);
       } catch (error) {
         if (!isMounted) return;
         
         console.error("JobDetailDialog: Error fetching job:", error);
         setError("Ett fel uppstod vid hämtning av jobbet");
         toast.error("Kunde inte ladda jobbinformation");
-        setFetchAttempted(true);
-        setIsLoading(false);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+          setFetchAttempted(true);
+        }
       }
-    }
+    };
     
     fetchJob();
     
     // Cleanup function to handle component unmounting
     return () => {
       isMounted = false;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
     };
   }, [jobId, open, trackJobView]);
 
