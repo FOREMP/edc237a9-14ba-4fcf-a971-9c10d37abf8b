@@ -43,21 +43,36 @@ const AdminDebugInfo = ({ allJobsCount, currentJobs }: AdminDebugInfoProps) => {
           } else {
             setDbAccessStatus("Access granted");
           }
-            
-          // Try a direct query for user profile
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('role, email')
-            .eq('id', user.id)
-            .maybeSingle();
-            
-          if (!error && data) {
-            setDbRole(data.role);
-            setDbEmail(data.email);
+          
+          // Skip profile check if we already know we have access issues
+          if (testError && testError.message.includes('infinite recursion')) {
+            setDbRole("Error: " + testError.message);
+            setDbEmail("Not found due to policy recursion");
             setDbCheckComplete(true);
-          } else {
-            console.error("Error fetching role:", error);
-            setDbRole("Error: " + error?.message);
+            return;
+          }
+            
+          // Try a direct query for user profile - but handle the recursion error gracefully
+          try {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('role, email')
+              .eq('id', user.id)
+              .maybeSingle();
+              
+            if (!error && data) {
+              setDbRole(data.role);
+              setDbEmail(data.email);
+              setDbCheckComplete(true);
+            } else {
+              console.error("Error fetching role:", error);
+              setDbRole("Error: " + error?.message);
+              setDbCheckComplete(true);
+            }
+          } catch (profileErr) {
+            console.error("Error with profile check:", profileErr);
+            setDbRole("Error accessing profiles table");
+            setDbEmail("Not found due to error");
             setDbCheckComplete(true);
           }
         } catch (err) {

@@ -1,12 +1,10 @@
+
 import { Job, JobFormData, JobStatus, JobType } from "@/types";
 import { authService } from "../auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { JobsServiceCore } from "./jobs-core";
 import { isAdminEmail } from "@/utils/adminEmails";
-
-// List of admin emails for consistent reference
-const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
 // JobService class focused on job management functionality
 export class JobsManagementService extends JobsServiceCore {
@@ -246,9 +244,8 @@ export class JobsManagementService extends JobsServiceCore {
       return null;
     }
     
-    // Enhanced admin check - check both role AND email
-    const isAdmin = currentUser.role === 'admin' || 
-                   (currentUser.email && isAdminEmail(currentUser.email));
+    // Direct check for admin email without relying on profile table
+    const isAdmin = currentUser.email && isAdminEmail(currentUser.email);
                    
     if (!isAdmin) {
       console.error("Not authorized to update job status - user is not admin");
@@ -258,32 +255,93 @@ export class JobsManagementService extends JobsServiceCore {
     try {
       console.log(`Updating job ${id} status to ${status} by admin ${currentUser.email}`);
       
-      // Check session first
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        console.log("Session missing, refreshing before job status update");
-        await supabase.auth.refreshSession();
+      // Check session first and try to refresh
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          console.log("Session missing, refreshing before job status update");
+          await supabase.auth.refreshSession();
+        }
+      } catch (sessionError) {
+        console.log("Session refresh failed, continuing with update anyway:", sessionError);
       }
       
-      const { data, error } = await supabase
-        .from('jobs')
-        .update({
-          status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single();
+      // Try direct update first using anon key (relies on RLS)
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .update({
+            status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id)
+          .select()
+          .single();
 
-      if (error) {
-        console.error("Error updating job status:", error);
-        return null;
+        if (error) {
+          console.error("Error updating job status via standard method:", error);
+          throw error; // Try fallback
+        }
+        
+        console.log("Job status updated successfully:", data);
+        return this.mapDbJobToJobType(data);
+      } catch (updateError) {
+        console.error("Falling back to direct RPC call for job update:", updateError);
+        
+        // Try to use an RPC function that can bypass RLS
+        try {
+          const { data, error } = await supabase.rpc('admin_update_job_status', { 
+            job_id: id, 
+            new_status: status 
+          });
+          
+          if (error) {
+            console.error("RPC fallback also failed:", error);
+            throw error;
+          }
+          
+          // If RPC was successful, try to fetch the updated job
+          const { data: jobData, error: jobError } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', id)
+            .single();
+            
+          if (jobError) {
+            console.error("Error fetching updated job:", jobError);
+            // Return a minimal job object with the updated status
+            return {
+              id: id,
+              companyId: '',
+              title: 'Job Updated',
+              description: 'Job status was updated successfully but details could not be fetched.',
+              requirements: '',
+              jobType: 'FULL_TIME' as JobType,
+              educationRequired: false,
+              location: '',
+              salary: '',
+              email: '',
+              phone: '',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              companyName: '',
+              status: status as JobStatus
+            };
+          }
+          
+          return this.mapDbJobToJobType(jobData);
+        } catch (rpcError) {
+          console.error("All update methods failed:", rpcError);
+          
+          // As a last resort, trigger a global page reload to get fresh data
+          // This doesn't return the job object but will ensure UI refreshes
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+          
+          return null;
+        }
       }
-      
-      console.log("Job status updated successfully:", data);
-      
-      // Convert to our Job type
-      return this.mapDbJobToJobType(data);
     } catch (error) {
       console.error("Error updating job status:", error);
       return null;
