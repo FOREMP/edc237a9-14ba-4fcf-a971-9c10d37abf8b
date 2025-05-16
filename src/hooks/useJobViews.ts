@@ -93,8 +93,8 @@ export const useJobViewsStats = (jobId: string) => {
           throw new Error(detailError.message);
         }
         
-        setImpressions(impressionData.length || 0);
-        setDetailViews(detailData.length || 0);
+        setImpressions(impressionData?.length || 0);
+        setDetailViews(detailData?.length || 0);
       } catch (err) {
         console.error('Error fetching job view statistics:', err);
         setError('Failed to load view statistics');

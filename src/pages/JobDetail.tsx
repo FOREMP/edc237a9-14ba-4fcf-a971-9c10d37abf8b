@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { jobsService } from "@/services/jobs";
@@ -36,6 +35,7 @@ const JobDetail = () => {
   const navigate = useNavigate();
   const { trackJobView } = useJobViews();
   const { user, isAdmin } = useAuth();
+  const [hasTrackedDetailView, setHasTrackedDetailView] = useState(false);
 
   const fetchJob = async () => {
     if (!id) return;
@@ -69,9 +69,12 @@ const JobDetail = () => {
       console.log("Job data retrieved:", jobData);
       setJob(jobData);
       
-      // Track this as a job detail view
-      const deviceType = getDeviceType();
-      trackJobView(id, 'detail', deviceType);
+      // Track this as a job detail view - only once
+      if (!hasTrackedDetailView) {
+        const deviceType = getDeviceType();
+        trackJobView(id, 'detail', deviceType);
+        setHasTrackedDetailView(true);
+      }
     } catch (error) {
       console.error("Error fetching job:", error);
       setError("Ett fel uppstod vid hämtning av jobbet");
@@ -83,7 +86,9 @@ const JobDetail = () => {
   
   useEffect(() => {
     fetchJob();
-  }, [id, navigate, trackJobView]);
+    // Reset tracking flag when ID changes
+    return () => setHasTrackedDetailView(false);
+  }, [id]);
 
   // Helper function to determine device type
   const getDeviceType = (): DeviceType => {

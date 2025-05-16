@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { sv } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews"; 
 import JobDetailDialog from "./JobDetailDialog";
 import { toast } from "sonner";
@@ -34,6 +34,8 @@ const JobCard = ({
   const { isAdmin } = useAuth();
   const { trackJobView } = useJobViews();
   const [showJobDetail, setShowJobDetail] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [hasTrackedImpression, setHasTrackedImpression] = useState(false);
 
   // Check if job is expired
   const isExpired = expiresAt && new Date(expiresAt) < new Date();
@@ -61,24 +63,20 @@ const JobCard = ({
 
   // Track job impression when card is rendered using Intersection Observer
   useEffect(() => {
-    // Create a unique key for localStorage to track whether this job has been viewed in this session
-    const sessionViewKey = `job_impression_${id}`;
-    
-    // If we've already tracked this impression in this session, don't track again
-    if (localStorage.getItem(sessionViewKey)) {
+    // Don't track if no ID or already tracked
+    if (!id || hasTrackedImpression) {
       return;
     }
     
-    // Use Intersection Observer to track when job cards come into view
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && !hasTrackedImpression) {
           // Only track the view once when it comes into view
           const deviceType = getDeviceType();
           trackJobView(id, 'impression', deviceType);
           
-          // Mark this impression as tracked for this session
-          localStorage.setItem(sessionViewKey, 'true');
+          // Mark as tracked to prevent duplicate tracking
+          setHasTrackedImpression(true);
           
           // Disconnect the observer after tracking
           observer.disconnect();
@@ -87,16 +85,14 @@ const JobCard = ({
     }, { threshold: 0.5 }); // Element is at least 50% visible
     
     // Get a reference to the current element
-    const element = document.getElementById(`job-card-${id}`);
-    
-    if (element) {
-      observer.observe(element);
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
     }
     
     return () => {
       observer.disconnect();
     };
-  }, [id, trackJobView]);
+  }, [id, trackJobView, hasTrackedImpression]);
 
   // Function to handle job detail view tracking and open the dialog
   const handleJobDetailClick = () => {
@@ -107,6 +103,7 @@ const JobCard = ({
       return;
     }
     
+    // Always track a detail view when the button is clicked
     const deviceType = getDeviceType();
     trackJobView(id, 'detail', deviceType);
     setShowJobDetail(true);
@@ -114,11 +111,15 @@ const JobCard = ({
 
   return (
     <>
-      <Card className={cn(
-        "job-card", 
-        typeClassNames[jobType],
-        isExpired ? "opacity-70" : ""
-      )} id={`job-card-${id}`}>
+      <Card 
+        className={cn(
+          "job-card", 
+          typeClassNames[jobType],
+          isExpired ? "opacity-70" : ""
+        )} 
+        id={`job-card-${id}`}
+        ref={cardRef}
+      >
         <CardHeader>
           <div className="flex justify-between items-start">
             <div>

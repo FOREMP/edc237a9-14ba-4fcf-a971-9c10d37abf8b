@@ -60,7 +60,6 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
       setIsLoading(true);
       setError(null);
       setFetchAttempted(false);
-      // Important: don't reset job here to prevent flickering
       
       try {
         console.log("JobDetailDialog: Fetching job details for ID:", jobId);
@@ -93,9 +92,8 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
           // Important: Set job data before setting loading to false
           setJob(jobData);
           
-          // Track this as a job detail view
-          const deviceType = getDeviceType();
-          trackJobView(jobId, 'detail', deviceType);
+          // Note: We're not tracking detail view here as it was already tracked in the JobCard
+          // when the user clicked "Visa mer"
         }
       } catch (error) {
         if (!isMounted) return;
