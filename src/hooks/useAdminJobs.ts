@@ -144,7 +144,12 @@ export const useAdminJobs = () => {
       // Show toast to indicate we're working on it
       toast.loading(`${status === 'approved' ? 'Godkänner' : 'Nekar'} jobbannonsen...`);
       
-      await jobsService.updateJobStatus(jobId, status);
+      const updatedJob = await jobsService.updateJobStatus(jobId, status);
+      
+      if (!updatedJob) {
+        toast.error(`Kunde inte ${status === 'approved' ? 'godkänna' : 'neka'} jobbet`);
+        return false;
+      }
       
       // Update local state - both the jobs array and the allJobs array
       setJobs(prev => prev.map(job => 

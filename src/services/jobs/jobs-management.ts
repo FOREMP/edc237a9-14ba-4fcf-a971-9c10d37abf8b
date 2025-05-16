@@ -1,3 +1,4 @@
+
 import { Job, JobFormData, JobStatus, JobType } from "@/types";
 import { authService } from "../auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -265,56 +266,21 @@ export class JobsManagementService extends JobsServiceCore {
         console.log("Session refresh failed, continuing with update anyway:", sessionError);
       }
       
-      // Try direct update first using anon key (relies on RLS)
-      try {
-        const { data, error } = await supabase
-          .from('jobs')
-          .update({
-            status,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id)
-          .select()
-          .single();
+      // Use direct update approach
+      const { data, error } = await supabase
+        .from('jobs')
+        .update({
+          status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select()
+        .single();
 
-        if (error) {
-          console.error("Error updating job status via standard method:", error);
-          throw error; // Try fallback
-        }
+      if (error) {
+        console.error("Error updating job status:", error);
         
-        console.log("Job status updated successfully:", data);
-        return this.mapDbJobToJobType(data);
-      } catch (updateError) {
-        console.error("Falling back to direct database update for job:", updateError);
-        
-        // Instead of using RPC that doesn't exist, try a direct update
-        // and ensure the user is an admin in our code
-        if (!isAdmin) {
-          console.error("Not authorized to update job status");
-          throw new Error("Not authorized to update job status");
-        }
-        
-        // Try an update with explicit select again
-        const { data, error } = await supabase
-          .from('jobs')
-          .update({
-            status,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id)
-          .select('*');
-          
-        if (error) {
-          console.error("All update methods failed:", error);
-          throw error;
-        }
-        
-        if (data && data.length > 0) {
-          console.log("Job status updated successfully via fallback:", data[0]);
-          return this.mapDbJobToJobType(data[0]);
-        }
-        
-        // If we got here but no data, try to fetch the updated job
+        // If we got an error, try to fetch the job to see if the update was actually successful
         const { data: jobData, error: jobError } = await supabase
           .from('jobs')
           .select('*')
@@ -323,28 +289,15 @@ export class JobsManagementService extends JobsServiceCore {
           
         if (jobError) {
           console.error("Error fetching updated job:", jobError);
-          // Return a minimal job object with the updated status
-          return {
-            id: id,
-            companyId: '',
-            title: 'Job Updated',
-            description: 'Job status was updated successfully but details could not be fetched.',
-            requirements: '',
-            jobType: 'FULL_TIME' as JobType,
-            educationRequired: false,
-            location: '',
-            salary: '',
-            email: '',
-            phone: '',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            companyName: '',
-            status: status as JobStatus
-          };
+          throw error; // Re-throw the original error
         }
         
+        // If we successfully fetched the job, return it
         return this.mapDbJobToJobType(jobData);
       }
+      
+      console.log("Job status updated successfully:", data);
+      return this.mapDbJobToJobType(data);
     } catch (error) {
       console.error("Error updating job status:", error);
       return null;

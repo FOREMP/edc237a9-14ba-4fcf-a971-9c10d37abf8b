@@ -96,15 +96,14 @@ export class JobsFilterService {
       }
       
       // If standard query failed, try a more direct approach that might bypass RLS
-      console.log("Attempting RPC fallback query for jobs...");
+      console.log("Attempting fallback for jobs query...");
       
       // Create dummy data for testing if all else fails
       const dummyJobs: Job[] = [];
       
       // Try to load real data from the database
-      // FIX: Remove the RPC call that doesn't exist in the database
       try {
-        // Instead of calling a non-existent RPC function, just count the jobs directly
+        // Instead of using RPC, do a direct count to check database connectivity
         const { count, error } = await supabase
           .from('jobs')
           .select('*', { count: 'exact', head: true });

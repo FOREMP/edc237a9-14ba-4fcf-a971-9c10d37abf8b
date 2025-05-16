@@ -241,6 +241,10 @@ export type Database = {
         Args: { user_id: string }
         Returns: boolean
       }
+      is_admin_by_email: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       reset_post_count: {
         Args: { user_id: string }
         Returns: undefined
