@@ -5,7 +5,7 @@ import JobCard from "@/components/JobCard";
 import JobFilter from "@/components/JobFilter";
 import { Job, JobFilter as JobFilterType } from "@/types";
 import { jobsService } from "@/services/jobs";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, AlertCircle } from "lucide-react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import { toast } from "sonner";
 
@@ -29,6 +29,14 @@ const Jobs = () => {
       // Only show approved jobs in the public jobs list
       const filteredJobs = await jobsService.getFilteredJobs({...filter, status: 'approved'});
       console.log("Fetched approved jobs:", filteredJobs.length);
+      
+      // Add more clear logging
+      if (filteredJobs.length === 0) {
+        console.log("No jobs matched the filter criteria");
+      } else {
+        console.log("First job in results:", filteredJobs[0]);
+      }
+      
       setJobs(filteredJobs);
       
       // Track impressions for these jobs when they appear in the job listing
@@ -53,7 +61,7 @@ const Jobs = () => {
       return 'tablet';
     }
     if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
-      return 'desktop';
+      return 'mobile';
     }
     return 'desktop';
   };
@@ -61,6 +69,11 @@ const Jobs = () => {
   const handleFilterChange = (newFilter: JobFilterType) => {
     console.log("Filter changed:", newFilter);
     setFilter(newFilter);
+  };
+
+  const handleRetry = () => {
+    console.log("Retrying job fetch...");
+    fetchJobs();
   };
 
   return (
@@ -86,10 +99,19 @@ const Jobs = () => {
             </div>
           ) : error ? (
             <div className="text-center py-12 bg-muted/30 rounded-lg">
-              <h3 className="text-xl font-semibold mb-2">Kunde inte hämta jobb</h3>
-              <p className="text-muted-foreground">
-                {error}
+              <div className="flex flex-col items-center gap-2 mb-4">
+                <AlertCircle className="w-8 h-8 text-destructive" />
+                <h3 className="text-xl font-semibold">{error}</h3>
+              </div>
+              <p className="text-muted-foreground mb-6">
+                Ett fel uppstod vid hämtning av jobb. Vänligen försök igen.
               </p>
+              <button 
+                onClick={handleRetry}
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Försök igen
+              </button>
             </div>
           ) : jobs.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

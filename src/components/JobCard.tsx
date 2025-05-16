@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { useJobViews, DeviceType } from "@/hooks/useJobViews"; 
 import JobDetailDialog from "./JobDetailDialog";
+import { toast } from "sonner";
 
 interface JobCardProps {
   job: Job;
@@ -97,7 +98,13 @@ const JobCard = ({
 
   // Function to handle job detail view tracking and open the dialog
   const handleJobDetailClick = () => {
-    console.log("Opening job detail dialog for job:", id);
+    console.log("Opening job detail dialog for job ID:", id);
+    if (!id) {
+      console.error("Attempted to open job detail with missing ID");
+      toast.error("Kunde inte visa jobbet. Saknar ID.");
+      return;
+    }
+    
     const deviceType = getDeviceType();
     trackJobView(id, 'detail', deviceType);
     setShowJobDetail(true);

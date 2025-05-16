@@ -21,6 +21,7 @@ import {
   Mail,
   Phone,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { sv } from "date-fns/locale";
@@ -41,41 +42,85 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   const [error, setError] = useState<string | null>(null);
   const { trackJobView } = useJobViews();
   const { user, isAdmin } = useAuth();
+  const [fetchAttempted, setFetchAttempted] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     async function fetchJob() {
-      if (!jobId || !open) return;
+      if (!jobId || !open) {
+        return;
+      }
       
-      setIsLoading(true);
-      setError(null);
+      if (isMounted) {
+        setIsLoading(true);
+        setError(null);
+        setFetchAttempted(false);
+      }
+      
+      // Set a timeout to handle cases where the fetch never completes
+      timeoutId = setTimeout(() => {
+        if (isMounted && isLoading) {
+          console.error("Job fetch timeout for ID:", jobId);
+          setIsLoading(false);
+          setError("Timeout while fetching job information");
+          toast.error("Förfrågan tog för lång tid. Försök igen.");
+          setFetchAttempted(true);
+        }
+      }, 10000); // 10 second timeout
       
       try {
         console.log("Fetching job details for ID:", jobId);
         const jobData = await jobsService.getJobById(jobId);
         
+        // Guard against component unmounting during async operation
+        if (!isMounted) return;
+        
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
         if (!jobData) {
           console.error("No job data returned for ID:", jobId);
           setError("Jobbet kunde inte hittas");
           toast.error("Jobbet kunde inte hittas");
+          setFetchAttempted(true);
+          setIsLoading(false);
           return;
         }
         
         console.log("Job data retrieved successfully:", jobData);
         setJob(jobData);
+        setFetchAttempted(true);
         
         // Track this as a job detail view
         const deviceType = getDeviceType();
         trackJobView(jobId, 'detail', deviceType);
       } catch (error) {
+        if (!isMounted) return;
+        
         console.error("Error fetching job:", error);
         setError("Ett fel uppstod vid hämtning av jobbet");
         toast.error("Kunde inte ladda jobbinformation");
+        setFetchAttempted(true);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
     
     fetchJob();
+    
+    // Cleanup function to handle component unmounting
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [jobId, open, trackJobView]);
 
   // Helper function to determine device type
@@ -93,10 +138,12 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
   // Check if the current user is the owner of this job
   const isOwner = user && job && user.id === job.companyId;
 
+  // Render loading state 
   if (isLoading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+          <DialogClose className="absolute right-4 top-4" />
           <div className="flex justify-center items-center py-12">
             <div className="w-8 h-8 rounded-full border-4 border-t-primary border-primary/30 animate-spin"></div>
           </div>
@@ -105,20 +152,49 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
     );
   }
 
-  if (error || !job) {
+  // Render error state or no job found state
+  if ((error || !job) && fetchAttempted) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[900px]">
           <DialogHeader>
-            <DialogTitle>{error || "Jobbet hittades inte"}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              {error || "Jobbet hittades inte"}
+            </DialogTitle>
             <DialogClose className="absolute right-4 top-4" />
           </DialogHeader>
           <div className="text-center py-6">
-            <p className="text-muted-foreground mb-4">Jobbet kan ha tagits bort eller är inte längre tillgängligt.</p>
+            <p className="text-muted-foreground mb-4">
+              {error ? error : "Jobbet kan ha tagits bort eller är inte längre tillgängligt."}
+            </p>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Stäng
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
     );
+  }
+
+  // If we have no job data and haven't attempted to fetch yet, show minimal loading
+  if (!job && !fetchAttempted) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+          <DialogClose className="absolute right-4 top-4" />
+          <div className="flex justify-center items-center py-12">
+            <div className="w-8 h-8 rounded-full border-4 border-t-primary border-primary/30 animate-spin"></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // At this point, we should have valid job data
+  if (!job) {
+    console.error("Unexpected state: No job data but not in loading or error state");
+    return null;
   }
 
   const formattedDate = format(new Date(job.createdAt), 'PPP', { locale: sv });

@@ -38,6 +38,7 @@ class JobsServiceCore {
       console.log("JobsServiceCore: Fetching job with ID:", id);
       if (!id) {
         console.error("getJobById called with empty or null ID");
+        toast.error("Ogiltigt jobb-ID");
         return null;
       }
       
@@ -56,10 +57,12 @@ class JobsServiceCore {
       
       if (!data) {
         console.error("No job found with ID:", id);
+        toast.error("Jobbet kunde inte hittas");
         return null;
       }
       
       console.log("JobsServiceCore: Successfully fetched job by ID:", id);
+      console.log("Job data:", data);
       
       // Convert database job to our Job type
       return this.mapDbJobToJobType(data);
@@ -101,15 +104,17 @@ class JobsServiceCore {
       throw new Error("Invalid job data received from database");
     }
     
-    // Make sure to explicitly cast job_type to JobType to maintain type safety
     try {
-      return {
+      // Log the job object we're attempting to map
+      console.log("Mapping job object:", job);
+      
+      const mappedJob: Job = {
         id: job.id,
         companyId: job.company_id,
         title: job.title,
         description: job.description,
         requirements: job.requirements || '',
-        jobType: job.job_type as JobType, // Explicitly cast to JobType enum
+        jobType: job.job_type as JobType,
         educationRequired: job.education_required,
         location: job.location,
         salary: job.salary || '',
@@ -120,6 +125,9 @@ class JobsServiceCore {
         companyName: job.company_name,
         status: job.status as JobStatus
       };
+      
+      console.log("Successfully mapped job:", mappedJob.id, mappedJob.title);
+      return mappedJob;
     } catch (error) {
       console.error("Error mapping job data:", error, job);
       throw new Error("Failed to process job data from database");
