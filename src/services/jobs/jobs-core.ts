@@ -9,7 +9,7 @@ class JobsServiceCore {
   async getAllJobs(): Promise<Job[]> {
     try {
       console.log("JobsServiceCore: Getting all approved jobs");
-      // For public view, only return approved jobs
+      // For public view, only return approved jobs - this will work with our unified policy
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -42,7 +42,14 @@ class JobsServiceCore {
         return null;
       }
       
-      // Using maybeSingle instead of single to avoid error when no record is found
+      // Explicitly log the session state for debugging
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log("Current auth session:", {
+        hasSession: !!sessionData.session,
+        userId: sessionData.session?.user?.id || 'none'
+      });
+      
+      // Using maybeSingle to avoid error when no record is found
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -56,13 +63,11 @@ class JobsServiceCore {
       }
       
       if (!data) {
-        console.error("No job found with ID:", id);
-        toast.error("Jobbet kunde inte hittas");
-        return null;
+        console.log("No job found with ID:", id);
+        return null; // Don't toast here, let the UI handle this case
       }
       
       console.log("JobsServiceCore: Successfully fetched job by ID:", id);
-      console.log("Job data:", data);
       
       // Convert database job to our Job type
       return this.mapDbJobToJobType(data);

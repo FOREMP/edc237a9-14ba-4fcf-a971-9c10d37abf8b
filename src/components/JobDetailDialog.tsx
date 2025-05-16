@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { jobsService } from "@/services/jobs";
 import { Job } from "@/types";
@@ -30,6 +29,7 @@ import { useJobViews, DeviceType } from "@/hooks/useJobViews";
 import JobViewsStats from "@/components/JobViewsStats";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface JobDetailDialogProps {
   jobId: string | null;
@@ -73,6 +73,14 @@ const JobDetailDialog = ({ jobId, open, onOpenChange }: JobDetailDialogProps) =>
       
       try {
         console.log("Fetching job details for ID:", jobId);
+        
+        // Check authentication status before fetching
+        const { data: sessionData } = await supabase.auth.getSession();
+        console.log("Auth state before job fetch:", {
+          hasSession: !!sessionData.session,
+          userId: sessionData.session?.user?.id || 'none'
+        });
+        
         const jobData = await jobsService.getJobById(jobId);
         
         // Guard against component unmounting during async operation
