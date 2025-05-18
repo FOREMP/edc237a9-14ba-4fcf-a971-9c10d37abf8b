@@ -134,7 +134,7 @@ const Home = () => {
               asChild 
               className="bg-white text-primary font-semibold hover:bg-white hover:text-primary"
             >
-              <Link to={isAuthenticated ? "/dashboard" : "/login"}>Prova gratis</Link>
+              <Link to="/auth">Prova gratis</Link>
             </Button>
           </div>
         </div>
