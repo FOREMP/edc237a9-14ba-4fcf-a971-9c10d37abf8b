@@ -13,6 +13,8 @@ import EditJob from "./pages/EditJob";
 import NotFound from "./pages/NotFound";
 import Pricing from "./pages/Pricing";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
+import UpdatePassword from "./pages/UpdatePassword";
 import UserSettings from "./pages/UserSettings";
 import Statistics from "./pages/Statistics";
 import Cookies from "./pages/Cookies";
@@ -37,6 +39,8 @@ const App = () => (
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/update-password" element={<UpdatePassword />} />
           <Route path="/cookies" element={<Cookies />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { LogIn, Mail, User } from "lucide-react";
+import { Mail, User } from "lucide-react";
 import { authService } from "@/services/auth";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
@@ -21,28 +21,6 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
   const navigate = useNavigate();
-  
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      console.log("Starting Google login process");
-      const result = await authService.loginWithGoogle();
-      
-      if (!result.success) {
-        toast.error(result.error || "Inloggning misslyckades");
-        console.error("Google login failed:", result.error);
-      } else {
-        console.log("Google auth initiated successfully");
-        // No navigation needed - Google OAuth will redirect
-        toast.success("Redirecting to Google login...");
-      }
-    } catch (error) {
-      console.error("Google login error:", error);
-      toast.error("Ett fel uppstod vid inloggning");
-    } finally {
-      setIsLoading(false);
-    }
-  };
   
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,6 +87,10 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
       setIsLoading(false);
     }
   };
+
+  const handleForgotPassword = () => {
+    navigate("/reset-password");
+  };
   
   return (
     <Card className="w-full max-w-md mx-auto">
@@ -149,6 +131,17 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
                 />
               </div>
               
+              <div className="flex justify-end">
+                <Button
+                  variant="link" 
+                  type="button"
+                  className="p-0 h-auto text-sm"
+                  onClick={handleForgotPassword}
+                >
+                  Glömt lösenord?
+                </Button>
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full" 
@@ -158,25 +151,6 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
                 {isLoading ? "Loggar in..." : "Logga in med E-post"}
               </Button>
             </form>
-            
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Eller</span>
-              </div>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              onClick={handleGoogleLogin} 
-              disabled={isLoading}
-              className="w-full"
-            >
-              <LogIn className="mr-2 h-4 w-4" />
-              {isLoading ? "Loggar in..." : "Logga in med Google"}
-            </Button>
           </TabsContent>
           
           <TabsContent value="register">
@@ -226,25 +200,6 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
                 {isLoading ? "Registrerar..." : "Registrera konto"}
               </Button>
             </form>
-            
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Eller</span>
-              </div>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              onClick={handleGoogleLogin} 
-              disabled={isLoading}
-              className="w-full"
-            >
-              <LogIn className="mr-2 h-4 w-4" />
-              {isLoading ? "Loggar in..." : "Fortsätt med Google"}
-            </Button>
           </TabsContent>
         </CardContent>
         

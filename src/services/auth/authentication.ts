@@ -1,4 +1,3 @@
-
 import { User } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
@@ -236,6 +235,67 @@ class AuthenticationService {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Ett fel uppstod vid byte av lösenord"
+      };
+    }
+  }
+
+  // Reset password (send reset password link)
+  async resetPassword(email: string): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      // Check if the email exists in the system first
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/update-password`,
+      });
+      
+      if (error) {
+        console.error("Password reset request failed:", error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+      
+      return {
+        success: true
+      };
+    } catch (error) {
+      console.error("Password reset error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Ett fel uppstod vid återställning av lösenordet"
+      };
+    }
+  }
+  
+  // Update password after reset
+  async updatePasswordFromReset(newPassword: string): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+      
+      if (error) {
+        console.error("Password update failed:", error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+      
+      return {
+        success: true
+      };
+    } catch (error) {
+      console.error("Password update error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Ett fel uppstod vid uppdatering av lösenordet"
       };
     }
   }
