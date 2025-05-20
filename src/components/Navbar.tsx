@@ -100,11 +100,11 @@ const Navbar = () => {
         {/* Mobile menu */}
         <div
           className={cn(
-            "fixed inset-0 md:hidden bg-white pt-20 px-4 z-20 transform transition-transform duration-300 ease-in-out",
+            "fixed inset-0 md:hidden bg-white pt-20 px-4 z-20 transform transition-transform duration-300 ease-in-out overflow-y-auto",
             isMenuOpen ? "translate-x-0" : "translate-x-full"
           )}
         >
-          <nav className="flex flex-col space-y-6 text-center">
+          <nav className="flex flex-col space-y-6 text-center pb-10">
             <Link 
               to="/" 
               className="text-xl font-medium py-2" 
@@ -163,20 +163,20 @@ const Navbar = () => {
                     handleLogout();
                     closeMenu();
                   }}
-                  className="flex items-center gap-2 justify-center"
+                  className="flex items-center gap-2 justify-center w-full"
                 >
                   <LogOut size={16} />
                   Logga ut
                 </Button>
                 
                 {user && (
-                  <div className="text-sm bg-primary/10 px-3 py-2 rounded-full">
+                  <div className="text-sm bg-primary/10 px-3 py-2 rounded-full mt-4">
                     {isAdmin ? "Admin" : user.companyName}
                   </div>
                 )}
               </>
             ) : (
-              <div onClick={closeMenu}>
+              <div onClick={closeMenu} className="flex justify-center w-full">
                 <LoginButton />
               </div>
             )}

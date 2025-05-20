@@ -30,12 +30,12 @@ const Home = () => {
   return (
     <Layout>
       {/* Hero Section */}
-      <section className="bg-gradient-to-r from-primary/90 to-primary text-white py-20">
+      <section className="bg-gradient-to-r from-primary/90 to-primary text-white py-16 md:py-20">
         <div className="container mx-auto px-4 text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-6">
+          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-6">
             Hitta ditt nästa jobb eller din nästa medarbetare
           </h1>
-          <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto">
+          <p className="text-lg md:text-xl lg:text-2xl mb-8 max-w-2xl mx-auto">
             Skill Base UF är plattformen som kopplar samman talangfulla kandidater med framstående företag.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -59,12 +59,12 @@ const Home = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-16 bg-secondary/50">
+      <section className="py-16 bg-secondary/50 overflow-hidden">
         <div className="container mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center mb-12">Hur Skill Base UF fungerar</h2>
+          <h2 className="text-2xl md:text-3xl font-bold text-center mb-12">Hur Skill Base UF fungerar</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-lg shadow-sm text-center">
+            <div className="bg-white p-6 md:p-8 rounded-lg shadow-sm text-center">
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <SearchIcon size={28} className="text-primary" />
               </div>
@@ -74,7 +74,7 @@ const Home = () => {
               </p>
             </div>
             
-            <div className="bg-white p-8 rounded-lg shadow-sm text-center">
+            <div className="bg-white p-6 md:p-8 rounded-lg shadow-sm text-center">
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Building2Icon size={28} className="text-primary" />
               </div>
@@ -84,7 +84,7 @@ const Home = () => {
               </p>
             </div>
             
-            <div className="bg-white p-8 rounded-lg shadow-sm text-center">
+            <div className="bg-white p-6 md:p-8 rounded-lg shadow-sm text-center">
               <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <BriefcaseIcon size={28} className="text-primary" />
               </div>
@@ -98,10 +98,10 @@ const Home = () => {
       </section>
       
       {/* Latest Jobs Section */}
-      <section className="py-16">
+      <section className="py-16 overflow-hidden">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl font-bold">Senaste jobben</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4">
+            <h2 className="text-2xl md:text-3xl font-bold">Senaste jobben</h2>
             <Button variant="outline" asChild className="bg-white text-primary border-primary font-semibold hover:bg-white hover:text-primary">
               <Link to="/jobs">Visa alla jobb</Link>
             </Button>
@@ -116,10 +116,10 @@ const Home = () => {
       </section>
       
       {/* CTA Section */}
-      <section className="py-16 bg-primary text-white">
+      <section className="py-16 bg-primary text-white overflow-hidden">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-6">Se våra prisplaner</h2>
-          <p className="text-xl mb-8 max-w-2xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-bold mb-6">Se våra prisplaner</h2>
+          <p className="text-lg md:text-xl mb-8 max-w-2xl mx-auto">
             Vi erbjuder olika prisplaner för att passa ditt företags behov, från enstaka annonser till månadsabonnemang.
           </p>
           

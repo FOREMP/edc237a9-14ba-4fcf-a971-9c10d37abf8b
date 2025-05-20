@@ -58,9 +58,9 @@ const Footer = () => {
           </div>
         </div>
         
-        <div className="border-t mt-8 pt-8 text-center text-muted-foreground flex justify-center items-center">
+        <div className="border-t mt-8 pt-8 text-center text-muted-foreground flex flex-col md:flex-row md:justify-center md:items-center gap-1 md:gap-2">
           <p>© {new Date().getFullYear()} Skillbase UF. Alla rättigheter förbehållna.</p>
-          <p className="ml-2">Skapat av <a href="https://foremp.se" target="_blank" rel="noopener noreferrer" className="hover:text-primary">FOREMP</a></p>
+          <p className="md:ml-2">Skapat av <a href="https://foremp.se" target="_blank" rel="noopener noreferrer" className="hover:text-primary">FOREMP</a></p>
         </div>
       </div>
     </footer>
