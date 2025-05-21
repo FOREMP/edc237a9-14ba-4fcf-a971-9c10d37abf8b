@@ -35,7 +35,14 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
     setIsManagingSubscription(true);
     try {
       toast.info("Ansluter till kundportalen...");
-      const { data, error } = await supabase.functions.invoke('customer-portal', {});
+      
+      // Add timestamp to ensure we recognize the return and prevent duplicate messages
+      const timestamp = Date.now();
+      const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true&ts=${timestamp}`;
+      
+      const { data, error } = await supabase.functions.invoke('customer-portal', {
+        body: { return_url: returnUrl }
+      });
       
       if (error) {
         console.error('Error accessing customer portal:', error);
@@ -79,6 +86,9 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   const usedJobs = features.monthlyPostsUsed || 0;
   const totalJobs = features.monthlyPostLimit;
   const availableJobs = Math.max(0, totalJobs - usedJobs);
+  
+  // Determine if subscription is actually active
+  const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
 
   return (
     <Card className="mb-8">
@@ -172,17 +182,27 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
         >
           Se alla planer
         </Button>
-        <Button 
-          onClick={handleManageSubscription}
-          disabled={isManagingSubscription || !features.isActive}
-        >
-          {isManagingSubscription ? (
-            <>
-              <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-              Laddar...
-            </>
-          ) : "Hantera prenumeration"}
-        </Button>
+        
+        {hasActiveSubscription ? (
+          <Button 
+            onClick={handleManageSubscription}
+            disabled={isManagingSubscription}
+          >
+            {isManagingSubscription ? (
+              <>
+                <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                Laddar...
+              </>
+            ) : "Hantera prenumeration"}
+          </Button>
+        ) : (
+          <Button 
+            onClick={() => navigate('/pricing')}
+            variant="default"
+          >
+            Uppgradera abonnemang
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

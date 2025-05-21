@@ -49,7 +49,13 @@ serve(async (req) => {
     }
 
     // Get the return_url from the request body or use the default
-    const return_url = body?.return_url || `${req.headers.get("origin") || "http://localhost:3000"}/dashboard`;
+    // Add timestamp to prevent caching and ensure subscription_updated is recognized
+    const baseReturnUrl = body?.return_url || `${req.headers.get("origin") || "http://localhost:3000"}/dashboard`;
+    const timestamp = Date.now();
+    const return_url = baseReturnUrl.includes('?') 
+      ? `${baseReturnUrl}&subscription_updated=true&ts=${timestamp}` 
+      : `${baseReturnUrl}?subscription_updated=true&ts=${timestamp}`;
+    
     console.log(`Return URL set to: ${return_url}`);
 
     // Retrieve the subscriber record

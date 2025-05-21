@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ const CancelSubscription = () => {
           .from('job_posting_limits')
           .select('monthly_post_limit, monthly_posts_used')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
         if (!error && data) {
           setRemainingJobs(Math.max(0, data.monthly_post_limit - data.monthly_posts_used));
@@ -37,16 +38,17 @@ const CancelSubscription = () => {
     };
     
     fetchRemainingJobs();
-  }, [user]);
+  }, [user, features]); // Also refresh when features change
 
   // Pre-fetch the customer portal URL when the component mounts
   useEffect(() => {
     const fetchPortalUrl = async () => {
-      if (!features.isActive) return;
+      if (!features.isActive || !user?.id) return;
       
       try {
-        // Include return URL that indicates subscription was updated
-        const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true`;
+        // Include return URL that indicates subscription was updated with timestamp
+        const timestamp = Date.now();
+        const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true&ts=${timestamp}`;
         
         const { data, error } = await supabase.functions.invoke('customer-portal', {
           body: { return_url: returnUrl }
@@ -66,7 +68,7 @@ const CancelSubscription = () => {
     };
     
     fetchPortalUrl();
-  }, [features.isActive]);
+  }, [features.isActive, user?.id]);
 
   const handleManageSubscription = async () => {
     // If we already have the URL, use it directly
@@ -80,7 +82,8 @@ const CancelSubscription = () => {
     try {
       toast.info("Ansluter till kundportalen...");
       
-      const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true`;
+      const timestamp = Date.now();
+      const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true&ts=${timestamp}`;
       
       const { data, error } = await supabase.functions.invoke('customer-portal', {
         body: { return_url: returnUrl }
@@ -122,6 +125,9 @@ const CancelSubscription = () => {
     }
   };
 
+  // Detect if the subscription is actually active
+  const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
+
   return (
     <Card>
       <CardHeader>
@@ -145,7 +151,7 @@ const CancelSubscription = () => {
               </p>
             )}
             
-            {features.tier !== 'free' ? (
+            {hasActiveSubscription ? (
               <div className="mt-4">
                 <p className="text-sm mb-2">
                   Jobbplatser: {remainingJobs !== null ? 
@@ -175,7 +181,7 @@ const CancelSubscription = () => {
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2">
-        {features.tier !== 'free' ? (
+        {hasActiveSubscription ? (
           <Button 
             onClick={handleManageSubscription} 
             disabled={isLoading}
