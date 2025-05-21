@@ -53,11 +53,22 @@ serve(async (req) => {
     const baseReturnUrl = body?.return_url || `${req.headers.get("origin") || "http://localhost:3000"}/dashboard`;
     const timestamp = Date.now();
     
-    // This is crucial: we add a subscription_updated=true parameter to the URL
+    // CRITICAL FIX: Make sure the return URL has the subscription_updated=true parameter
     // along with a timestamp to ensure the app knows to refresh the subscription data
-    const return_url = baseReturnUrl.includes('?') 
-      ? `${baseReturnUrl}&subscription_updated=true&ts=${timestamp}` 
-      : `${baseReturnUrl}?subscription_updated=true&ts=${timestamp}`;
+    const hasQueryParams = baseReturnUrl.includes('?');
+    let return_url = baseReturnUrl;
+    
+    // Clean up any existing subscription_updated params first to avoid duplicates
+    if (return_url.includes('subscription_updated=')) {
+      return_url = return_url.replace(/([?&])subscription_updated=true(&|$)/, '$1');
+      return_url = return_url.replace(/([?&])ts=\d+(&|$)/, '$1');
+      // Clean up any trailing & or ? after removal
+      return_url = return_url.replace(/[?&]$/, '');
+    }
+    
+    // Now add the fresh parameters
+    return_url = return_url + (hasQueryParams ? '&' : '?') + 
+      `subscription_updated=true&ts=${timestamp}`;
     
     console.log(`Return URL set to: ${return_url}`);
 
@@ -102,6 +113,7 @@ serve(async (req) => {
               user_id: user.id,
               email: user.email,
               stripe_customer_id: customerId,
+              updated_at: new Date().toISOString()
             });
         }
       } else {

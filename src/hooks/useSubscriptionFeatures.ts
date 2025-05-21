@@ -23,6 +23,7 @@ export const useSubscriptionFeatures = () => {
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
+  const [lastQueryTime, setLastQueryTime] = useState<number>(0);
   const [consecutiveRefreshCount, setConsecutiveRefreshCount] = useState(0);
   const [features, setFeatures] = useState<SubscriptionFeatures>({
     monthlyPostLimit: 1,
@@ -40,8 +41,8 @@ export const useSubscriptionFeatures = () => {
   const refreshSubscription = useCallback(() => {
     const now = Date.now();
     
-    // Basic throttling - prevent multiple refreshes within 500ms
-    if (now - lastRefreshTime < 500) {
+    // Basic throttling - prevent multiple refreshes within 300ms
+    if (now - lastRefreshTime < 300) {
       console.log("Throttling rapid subscription refresh attempts");
       return;
     }
@@ -54,7 +55,7 @@ export const useSubscriptionFeatures = () => {
     }
     
     // Apply increasing delay for rapid successive refreshes to prevent hammering the API
-    const refreshDelay = Math.min(consecutiveRefreshCount * 100, 1000);
+    const refreshDelay = Math.min(consecutiveRefreshCount * 50, 500);
     
     console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
     setLastRefreshTime(now);
@@ -68,17 +69,25 @@ export const useSubscriptionFeatures = () => {
 
   // Function to fetch subscription status
   const fetchSubscriptionFeatures = useCallback(async () => {
+    // Skip if no user is logged in
     if (!user?.id) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // Set loading state if we haven't queried recently
+    const now = Date.now();
+    const timeSinceLastQuery = now - lastQueryTime;
+    if (timeSinceLastQuery > 1000) { // Only show loading state for "new" queries
+      setLoading(true);
+    }
+    
+    setLastQueryTime(now);
 
     try {
       console.log("Fetching subscription data for user:", user.id);
       
-      // First try to get from subscribers table (Stripe subscription information)
+      // IMPORTANT CHANGE: First try to get from subscribers table with a fresh policy
       // Use a direct query with select count(*) to check if the record exists
       // before attempting to fetch it to avoid "no rows returned" error logging
       const { count: subscriberCount } = await supabase
@@ -90,18 +99,19 @@ export const useSubscriptionFeatures = () => {
       let subscriberError = null;
       
       if (subscriberCount && subscriberCount > 0) {
+        // Set cache control options to force a fresh fetch from the database
         const result = await supabase
           .from('subscribers')
           .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .maybeSingle()
+          .abortSignal(new AbortController().signal); // Force a fresh request
         
         subscriberData = result.data;
         subscriberError = result.error;
       }
 
-      // Then get from job_posting_limits table (actual feature limits and usage)
-      // Same approach to avoid unnecessary error logs
+      // Then get from job_posting_limits table with fresh policy
       const { count: limitsCount } = await supabase
         .from('job_posting_limits')
         .select('*', { count: 'exact', head: true })
@@ -115,7 +125,8 @@ export const useSubscriptionFeatures = () => {
           .from('job_posting_limits')
           .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .maybeSingle()
+          .abortSignal(new AbortController().signal); // Force a fresh request
           
         limitsData = result.data;
         limitsError = result.error;
@@ -132,7 +143,8 @@ export const useSubscriptionFeatures = () => {
       console.log("Subscription data:", subscriberData);
       console.log("Limits data:", limitsData);
 
-      // Prioritize subscriber data for determining active status and tier
+      // CRITICAL FIX: Always prioritize subscriber data as source of truth
+      // Since that's where Stripe webhook will update data
       let isActive = subscriberData?.subscribed || false;
       
       // Get tier from subscriber data if available, otherwise from limits data
@@ -143,14 +155,18 @@ export const useSubscriptionFeatures = () => {
         tier = limitsData.subscription_tier as SubscriptionTier;
       }
       
-      // Critical fix: If tier is 'standard' or 'premium', consider it active 
-      // regardless of subscribed flag to handle cases where subscribed is incorrectly set
-      if (tier === 'standard' || tier === 'premium') {
-        isActive = true;
+      // CRITICAL FIX: If subscription_id is missing or if subscription_end date is in the past, 
+      // the subscription is no longer active
+      const expiresAt = subscriberData?.subscription_end ? new Date(subscriberData.subscription_end) : null;
+      if (expiresAt && expiresAt < new Date()) {
+        console.log("Subscription expired at:", expiresAt);
+        isActive = false;
+        // If a subscription is expired, reset to free tier
+        if (tier !== 'free' && tier !== 'single') {
+          tier = 'free';
+        }
       }
       
-      const expiresAt = subscriberData?.subscription_end ? new Date(subscriberData.subscription_end) : null;
-
       // Set default post limit based on tier
       let monthlyPostLimit = 1;
       if (tier === 'basic') monthlyPostLimit = 5;
@@ -200,6 +216,21 @@ export const useSubscriptionFeatures = () => {
       // Get correct monthly posts used value
       const monthlyPostsUsed = limitsData?.monthly_posts_used || 0;
 
+      // CRITICAL FIX: Additional consistency check - if subscriber table and limits table have
+      // different tiers, update the limits table to match the subscriber table
+      if (subscriberData && limitsData && 
+          subscriberData.subscription_tier !== limitsData.subscription_tier) {
+        console.log(`Fixing subscription tier mismatch: limits=${limitsData.subscription_tier}, subscriber=${subscriberData.subscription_tier}`);
+        
+        await supabase
+          .from('job_posting_limits')
+          .update({ 
+            subscription_tier: subscriberData.subscription_tier,
+            monthly_post_limit: monthlyPostLimit
+          })
+          .eq('user_id', user.id);
+      }
+
       // Determine features based on subscription tier
       // Each tier includes features from lower tiers
       const updatedFeatures: SubscriptionFeatures = {
@@ -236,7 +267,7 @@ export const useSubscriptionFeatures = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, lastQueryTime]);
 
   // Initial fetch and refresh mechanism
   useEffect(() => {

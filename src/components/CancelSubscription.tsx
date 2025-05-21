@@ -45,7 +45,7 @@ const CancelSubscription = () => {
   // Pre-fetch the customer portal URL when the component mounts
   useEffect(() => {
     const fetchPortalUrl = async () => {
-      if (!features.isActive || !user?.id) return;
+      if (!user?.id) return;
       
       try {
         // Include return URL that indicates subscription was updated with timestamp
@@ -69,7 +69,10 @@ const CancelSubscription = () => {
       }
     };
     
-    fetchPortalUrl();
+    // Only pre-fetch URL if subscription is active (otherwise it's unnecessary)
+    if (features.isActive) {
+      fetchPortalUrl();
+    }
   }, [features.isActive, user?.id]);
 
   const handleManageSubscription = async () => {
@@ -132,6 +135,7 @@ const CancelSubscription = () => {
 
   // Force a refresh of subscription data when this component mounts
   useEffect(() => {
+    console.log("CancelSubscription component mounted, refreshing subscription");
     refreshSubscription();
   }, [refreshSubscription]);
 
@@ -152,7 +156,7 @@ const CancelSubscription = () => {
               </span>
             </h3>
             
-            {features.expiresAt && (
+            {features.expiresAt && features.isActive && (
               <p className="text-sm text-muted-foreground">
                 Förnyas: {new Date(features.expiresAt).toLocaleDateString('sv-SE')}
               </p>

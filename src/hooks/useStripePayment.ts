@@ -69,6 +69,11 @@ export const useStripePayment = () => {
       
       if (data.url) {
         console.log('Betalningslänk skapad, omdirigerar till:', data.url);
+        
+        // Store the timestamp in localStorage to verify when returning from Stripe
+        localStorage.setItem('stripe_checkout_timestamp', timestamp.toString());
+        localStorage.setItem('stripe_checkout_plan', plan);
+        
         window.location.href = data.url;
       } else {
         console.error('Ingen URL returnerades:', data);

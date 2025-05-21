@@ -11,6 +11,8 @@ export const useSubscriptionStatus = () => {
   const [hasProcessedPayment, setHasProcessedPayment] = useState(false);
   const [hasProcessedUpdate, setHasProcessedUpdate] = useState(false);
   const lastProcessedTimestamp = useRef<string | null>(null);
+  const refreshAttempts = useRef<number>(0);
+  const maxRefreshAttempts = 5; // Maximum number of refresh attempts
 
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
@@ -32,6 +34,7 @@ export const useSubscriptionStatus = () => {
       // Clear any existing timeout
       if (refreshTimeoutRef.current) {
         window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
       }
       
       toast.success(`Din betalning för ${plan} har genomförts!`, {
@@ -50,14 +53,29 @@ export const useSubscriptionStatus = () => {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Immediate refresh followed by a delayed one to ensure backend has updated
+      // Reset refresh attempts counter
+      refreshAttempts.current = 0;
+      
+      // Immediate refresh followed by multiple delayed ones to ensure backend has updated
       refreshSubscription();
       
-      refreshTimeoutRef.current = window.setTimeout(() => {
-        console.log("Second refresh after successful payment");
-        refreshSubscription();
-        refreshTimeoutRef.current = null;
-      }, 1500);
+      // Schedule multiple refresh attempts with increasing delays
+      const scheduleNextRefresh = () => {
+        if (refreshAttempts.current < maxRefreshAttempts) {
+          const delay = Math.pow(2, refreshAttempts.current) * 500; // Exponential backoff
+          console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1} after ${delay}ms`);
+          
+          refreshTimeoutRef.current = window.setTimeout(() => {
+            console.log(`Executing refresh attempt ${refreshAttempts.current + 1}`);
+            refreshSubscription();
+            refreshAttempts.current++;
+            scheduleNextRefresh();
+            refreshTimeoutRef.current = null;
+          }, delay);
+        }
+      };
+      
+      scheduleNextRefresh();
     }
     
     // Handle subscription update from Stripe portal
@@ -67,6 +85,7 @@ export const useSubscriptionStatus = () => {
       // Clear any existing timeout
       if (refreshTimeoutRef.current) {
         window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
       }
       
       toast.success("Din prenumeration har uppdaterats!", {
@@ -85,15 +104,18 @@ export const useSubscriptionStatus = () => {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Immediate refresh followed by several delayed ones to ensure the backend has fully updated
+      // Reset refresh attempts counter
+      refreshAttempts.current = 0;
+      
+      // Immediate refresh to get the latest data
       refreshSubscription();
       
-      // Schedule multiple refreshes with increasing delays to catch any backend propagation delays
-      const refreshDelays = [1000, 3000, 6000];
+      // Schedule multiple refresh attempts with increasing delays and frequency
+      const refreshDelays = [500, 1000, 2000, 3000, 5000, 8000]; // Fibonacci-like sequence for more frequent early checks
       
       refreshDelays.forEach((delay, index) => {
         setTimeout(() => {
-          console.log(`Additional refresh ${index + 1} after subscription update`);
+          console.log(`Additional refresh ${index + 1} after subscription update (${delay}ms)`);
           refreshSubscription();
         }, delay);
       });
@@ -103,6 +125,7 @@ export const useSubscriptionStatus = () => {
     return () => {
       if (refreshTimeoutRef.current) {
         window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
       }
     };
   }, [searchParams, refreshSubscription, hasProcessedPayment, hasProcessedUpdate]);
@@ -113,8 +136,31 @@ export const useSubscriptionStatus = () => {
       setHasProcessedPayment(false);
       setHasProcessedUpdate(false);
       lastProcessedTimestamp.current = null;
+      refreshAttempts.current = 0;
     };
   }, [window.location.pathname]);
+
+  // Add a periodic refresh to ensure subscription status is up-to-date
+  // This helps catch any changes made outside the app's direct flow
+  useEffect(() => {
+    // Don't do periodic refresh during specific update operations
+    if (hasProcessedPayment || hasProcessedUpdate) return;
+    
+    const intervalId = window.setInterval(() => {
+      console.log("Running periodic subscription refresh check");
+      refreshSubscription();
+    }, 30000); // Check every 30 seconds
+    
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshSubscription, hasProcessedPayment, hasProcessedUpdate]);
+
+  // Force an immediate refresh when this hook mounts
+  useEffect(() => {
+    console.log("useSubscriptionStatus mounted - forcing refresh");
+    refreshSubscription();
+  }, [refreshSubscription]);
 
   return {
     features,
