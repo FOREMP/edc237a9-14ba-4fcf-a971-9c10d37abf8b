@@ -28,7 +28,8 @@ export const useStripePayment = () => {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
         body: { 
           plan,
-          test_mode: true // Explicitly request test mode
+          test_mode: true, // Explicitly request test mode
+          return_url: `${window.location.origin}/dashboard?payment_success=true&plan=${plan}`
         }
       });
       

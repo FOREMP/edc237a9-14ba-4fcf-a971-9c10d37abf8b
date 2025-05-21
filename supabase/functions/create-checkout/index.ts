@@ -1,268 +1,154 @@
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import Stripe from "https://esm.sh/stripe@12.18.0?target=deno";
+import { corsHeaders } from "../_shared/cors.ts";
 
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-// Helper logging function for enhanced debugging
-const logStep = (step: string, details?: any) => {
-  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
-  console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
-};
-
-// Subscription tiers configuration
-const SUBSCRIPTION_LIMITS = {
-  single: { posts: 1, price: 10000 },   // 100 SEK
-  basic: { posts: 5, price: 35000 },    // 350 SEK
-  standard: { posts: 15, price: 75000 }, // 750 SEK
-  premium: { posts: 999, price: 120000 } // 1200 SEK (effectively unlimited)
-};
+// Define the request body type
+interface RequestBody {
+  plan: string;
+  test_mode?: boolean;
+  return_url?: string;
+}
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight request
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    logStep("Function started");
-
-    // Use the test key from environment variables
-    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeKey) {
-      throw new Error("STRIPE_SECRET_KEY är inte inställd");
+    // Get the Stripe API key from environment
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeSecretKey) {
+      throw new Error("STRIPE_SECRET_KEY is not set in the environment");
     }
     
-    logStep("Retrieved Stripe key", { keyLength: stripeKey.length, keyStart: stripeKey.substring(0, 10) + "..." });
-    
-    // Strict check for test key
-    if (!stripeKey.startsWith('sk_test_')) {
-      logStep("ERROR: Not using a test key - stopping execution", { keyPrefix: stripeKey.substring(0, 7) + "..." });
-      return new Response(JSON.stringify({ 
-        error: "Endast testnycklar tillåtna för Stripe",
-        details: "Kontrollera att STRIPE_SECRET_KEY i Supabase börjar med 'sk_test_'" 
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
-    } else {
-      logStep("Using Stripe test key ✓");
+    // Get authorization header
+    const authorization = req.headers.get("Authorization");
+    if (!authorization) {
+      throw new Error("Missing authorization header");
     }
 
-    // Create Supabase client with service role key for database operations
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { persistSession: false } }
-    );
+    // Get Supabase client
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.7.1");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; 
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // Verify the user token
+    const token = authorization.replace("Bearer ", "");
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    
+    if (userError || !user) {
+      throw new Error("Invalid user token");
+    }
 
     // Parse request body
-    let requestData;
-    try {
-      requestData = await req.json();
-      const { plan } = requestData;
-      logStep("Request body parsed", { plan, requestData });
+    const { plan, test_mode = true, return_url = null }: RequestBody = await req.json();
 
-      if (!plan || !SUBSCRIPTION_LIMITS[plan as keyof typeof SUBSCRIPTION_LIMITS]) {
-        throw new Error("Ogiltig plan angiven");
-      }
-    } catch (parseError) {
-      logStep("Request body parse error", { error: parseError.message });
-      throw new Error("Kunde inte tolka förfrågan: " + parseError.message);
-    }
-    
-    const { plan } = requestData;
-
-    // Get user from auth header
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new Error("Auktoriseringsheader saknas");
-    }
-    
-    const token = authHeader.replace("Bearer ", "");
-    logStep("Token extracted", { tokenLength: token.length });
-    
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-    if (userError) {
-      logStep("Auth error", { error: userError.message });
-      throw new Error(`Autentiseringsfel: ${userError.message}`);
-    }
-    
-    const user = userData.user;
-    if (!user?.email) {
-      throw new Error("Användaren är inte autentiserad eller email saknas");
-    }
-    logStep("User authenticated", { userId: user.id, email: user.email });
-
-    // Initialize Stripe with the test key
-    const stripe = new Stripe(stripeKey, {
+    // Initialize Stripe
+    const stripe = new Stripe(stripeSecretKey, {
       apiVersion: "2023-10-16",
     });
 
-    // Check if customer already exists
-    logStep("Looking for existing customer", { email: user.email });
-    let customerId;
-    
-    try {
-      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-      
-      if (customers.data.length > 0) {
-        customerId = customers.data[0].id;
-        logStep("Existing customer found", { customerId });
-      } else {
-        // Create new customer
-        logStep("Creating new customer", { email: user.email });
-        const customer = await stripe.customers.create({ 
-          email: user.email,
-          metadata: { user_id: user.id },
-          name: user.user_metadata?.company_name || user.user_metadata?.name || "Företag"
-        });
-        customerId = customer.id;
-        logStep("New customer created", { customerId });
-      }
-    } catch (stripeError) {
-      logStep("Stripe customer error", { error: stripeError.message });
-      throw new Error("Fel vid hantering av Stripe-kund: " + stripeError.message);
-    }
+    // Check if the user already has a Stripe customer
+    const { data: existingCustomer, error: customerError } = await supabase
+      .from("subscribers")
+      .select("stripe_customer_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    try {
-      // Get the plan configuration
-      const planConfig = SUBSCRIPTION_LIMITS[plan as keyof typeof SUBSCRIPTION_LIMITS];
-      const amount = planConfig.price;
-      const isSubscription = plan !== 'single';
-      
-      logStep("Creating checkout session in TEST MODE", { 
-        customer: customerId, 
-        mode: isSubscription ? "subscription" : "payment",
-        amount: amount,
-        plan: plan,
-        postLimit: planConfig.posts
+    let customerId;
+
+    // Use existing customer ID if available
+    if (!customerError && existingCustomer?.stripe_customer_id) {
+      customerId = existingCustomer.stripe_customer_id;
+    } else {
+      // Check if customer exists in Stripe by email
+      const existingStripeCustomers = await stripe.customers.list({
+        email: user.email,
+        limit: 1,
       });
-      
-      // Create a session with dynamic line items instead of using price IDs
-      const lineItems = [{
-        price_data: {
-          currency: 'sek',
-          product_data: {
-            name: `${plan.charAt(0).toUpperCase() + plan.slice(1)} ${isSubscription ? 'Prenumeration' : 'Köp'}`,
-            description: `${isSubscription ? 'Månatlig prenumeration' : 'Engångsköp'} för ${plan} plan`,
-          },
-          unit_amount: amount,
-          ...(isSubscription ? { recurring: { interval: 'month' } } : {})
-        },
-        quantity: 1,
-      }];
-      
-      let session;
-      try {
-        session = await stripe.checkout.sessions.create({
-          customer: customerId,
-          payment_method_types: ["card"],
-          line_items: lineItems,
-          mode: isSubscription ? "subscription" : "payment",
-          allow_promotion_codes: true,
-          billing_address_collection: "auto",
-          customer_update: {
-            address: 'auto',
-            name: 'auto'
-          },
-          tax_id_collection: { enabled: true },
-          automatic_tax: { enabled: true },
+
+      if (existingStripeCustomers.data.length > 0) {
+        customerId = existingStripeCustomers.data[0].id;
+        
+        // Update or create subscriber record with customer ID
+        await supabase
+          .from("subscribers")
+          .upsert({
+            user_id: user.id,
+            email: user.email,
+            stripe_customer_id: customerId,
+          });
+      } else {
+        // Create a new Stripe customer
+        const newCustomer = await stripe.customers.create({
+          email: user.email,
           metadata: {
             user_id: user.id,
-            plan: plan,
-            post_limit: planConfig.posts
           },
-          success_url: `${req.headers.get("origin")}/dashboard?payment_success=true&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${req.headers.get("origin")}/pricing?payment_cancelled=true`,
         });
-      } catch (sessionError) {
-        logStep("Checkout session creation error", { error: sessionError.message });
+        customerId = newCustomer.id;
         
-        // Check if this is a card declined error
-        if (sessionError.message?.includes('card declined')) {
-          return new Response(JSON.stringify({ 
-            error: "Kortet nekades. Använd giltigt testkort (t.ex. 4242 4242 4242 4242)"
-          }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 400,
+        // Store the new customer ID in database
+        await supabase
+          .from("subscribers")
+          .upsert({
+            user_id: user.id,
+            email: user.email,
+            stripe_customer_id: customerId,
           });
-        }
-        
-        throw new Error("Kunde inte skapa betalningssession: " + sessionError.message);
       }
+    }
 
-      logStep("Checkout session created in TEST MODE", { sessionId: session.id, sessionUrl: session.url });
+    // Set up prices based on plan
+    let priceId;
+    let mode = "subscription";
 
-      // Store the pending order in Supabase - don't block the checkout flow if this fails
-      try {
-        // First, update the subscribers table
-        const { error: insertError } = await supabaseClient.from("subscribers").upsert({
-          user_id: user.id,
-          email: user.email,
-          stripe_customer_id: customerId,
-          subscription_tier: plan,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'email' });
-
-        if (insertError) {
-          logStep("Database insertion warning", { error: insertError.message });
-          console.warn("Warning: Failed to update subscriber record:", insertError);
-        } else {
-          logStep("Subscriber record updated successfully");
-        }
-
-        // Then, update the job_posting_limits table using the database function
-        const { error: limitError } = await supabaseClient.rpc("update_subscription_tier", {
-          user_id: user.id,
-          tier: plan,
-          post_limit: planConfig.posts
-        });
-
-        if (limitError) {
-          logStep("Database limits update warning", { error: limitError.message });
-          console.warn("Warning: Failed to update subscription limits:", limitError);
-        } else {
-          logStep("Subscription limits updated successfully", { tier: plan, postLimit: planConfig.posts });
-        }
-      } catch (dbError) {
-        // Don't fail the checkout if database update fails
-        logStep("Database operation error", { error: dbError.message });
-        console.error("Database error during subscriber update:", dbError);
-      }
-
-      // Return checkout URL
-      return new Response(JSON.stringify({ url: session.url }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      });
-      
-    } catch (stripeError) {
-      logStep("Stripe error", { error: stripeError.message });
-      throw new Error("Fel vid betalningsintegrering: " + stripeError.message);
+    // Test mode price IDs - should match your Stripe dashboard
+    if (plan === "basic") {
+      priceId = "price_1O1qfxJcECj02lzmYLgjFO4F"; // Basic plan
+    } else if (plan === "standard") {
+      priceId = "price_1O1qfOJcECj02lzmg6fI3s83"; // Standard plan
+    } else if (plan === "premium") {
+      priceId = "price_1O1qeWJcECj02lzmdUPlaT4m"; // Premium plan
+    } else if (plan === "single") {
+      priceId = "price_1O6OOiJcECj02lzmOu6xrG7w"; // Single job posting
+      mode = "payment"; // One-time payment
+    } else {
+      throw new Error(`Unknown plan: ${plan}`);
     }
     
-  } catch (error) {
-    // Comprehensive error logging
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : 'Unknown error';
-    
-    console.error("Error creating checkout session:", errorMessage);
-    logStep("ERROR in create-checkout", { 
-      message: errorMessage,
-      stack: errorStack
+    // Determine success URL based on whether a return_url is provided
+    const successUrl = return_url || `${req.headers.get("origin")}/dashboard?payment_success=true&plan=${plan}`;
+    console.log(`Success URL set to: ${successUrl}`);
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: mode,
+      success_url: successUrl,
+      cancel_url: `${req.headers.get("origin")}/pricing?payment_canceled=true`,
+    });
+
+    return new Response(JSON.stringify({ url: session.url }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
     
+  } catch (error) {
+    console.error("Checkout error:", error);
     return new Response(JSON.stringify({ 
-      error: errorMessage,
-      details: errorStack
+      error: error.message || "Failed to create checkout session"
     }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

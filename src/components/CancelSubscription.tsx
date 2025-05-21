@@ -45,7 +45,12 @@ const CancelSubscription = () => {
       if (!features.isActive) return;
       
       try {
-        const { data, error } = await supabase.functions.invoke('customer-portal', {});
+        // Include return URL that indicates subscription was updated
+        const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true`;
+        
+        const { data, error } = await supabase.functions.invoke('customer-portal', {
+          body: { return_url: returnUrl }
+        });
         
         if (error) {
           console.error('Error pre-fetching customer portal URL:', error);
@@ -75,7 +80,11 @@ const CancelSubscription = () => {
     try {
       toast.info("Ansluter till kundportalen...");
       
-      const { data, error } = await supabase.functions.invoke('customer-portal', {});
+      const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true`;
+      
+      const { data, error } = await supabase.functions.invoke('customer-portal', {
+        body: { return_url: returnUrl }
+      });
       
       if (error) {
         console.error('Error accessing customer portal:', error);

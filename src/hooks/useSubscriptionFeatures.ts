@@ -22,6 +22,7 @@ export const useSubscriptionFeatures = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
   const [features, setFeatures] = useState<SubscriptionFeatures>({
     monthlyPostLimit: 1,
     monthlyPostsUsed: 0,
@@ -36,9 +37,17 @@ export const useSubscriptionFeatures = () => {
   });
 
   const refreshSubscription = useCallback(() => {
+    const now = Date.now();
+    // Prevent multiple refreshes within a short time window (1 second)
+    if (now - lastRefreshTime < 1000) {
+      console.log("Throttling rapid subscription refresh attempts");
+      return;
+    }
+    
     console.log("Refreshing subscription data");
+    setLastRefreshTime(now);
     setRefreshTrigger(prev => prev + 1);
-  }, []);
+  }, [lastRefreshTime]);
 
   // Function to fetch subscription status
   const fetchSubscriptionFeatures = useCallback(async () => {
@@ -53,18 +62,47 @@ export const useSubscriptionFeatures = () => {
       console.log("Fetching subscription data for user:", user.id);
       
       // First try to get from subscribers table (Stripe subscription information)
-      const { data: subscriberData, error: subscriberError } = await supabase
+      // Use a direct query with select count(*) to check if the record exists
+      // before attempting to fetch it to avoid "no rows returned" error logging
+      const { count: subscriberCount } = await supabase
         .from('subscribers')
-        .select('subscription_tier, subscribed, subscription_end, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      let subscriberData = null;
+      let subscriberError = null;
+      
+      if (subscriberCount && subscriberCount > 0) {
+        const result = await supabase
+          .from('subscribers')
+          .select('subscription_tier, subscribed, subscription_end, updated_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        subscriberData = result.data;
+        subscriberError = result.error;
+      }
 
       // Then get from job_posting_limits table (actual feature limits and usage)
-      const { data: limitsData, error: limitsError } = await supabase
+      // Same approach to avoid unnecessary error logs
+      const { count: limitsCount } = await supabase
         .from('job_posting_limits')
-        .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      let limitsData = null;
+      let limitsError = null;
+      
+      if (limitsCount && limitsCount > 0) {
+        const result = await supabase
+          .from('job_posting_limits')
+          .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        limitsData = result.data;
+        limitsError = result.error;
+      }
 
       if (subscriberError && subscriberError.code !== 'PGRST116') {
         console.error('Error fetching subscription data:', subscriberError);
@@ -119,13 +157,27 @@ export const useSubscriptionFeatures = () => {
           // Update the limits data in the database
           await supabase
             .from('job_posting_limits')
-            .update({ monthly_post_limit: expectedLimit })
+            .update({ 
+              monthly_post_limit: expectedLimit,
+              subscription_tier: tier // Also update the tier to keep them in sync
+            })
             .eq('user_id', user.id);
             
           monthlyPostLimit = expectedLimit;
         } else {
           monthlyPostLimit = limitsData.monthly_post_limit;
         }
+      } else if (tier !== 'free') {
+        // If we don't have limits data but we do have a subscription tier, create a limits record
+        console.log(`Creating new job_posting_limits record for user with tier ${tier}`);
+        await supabase
+          .from('job_posting_limits')
+          .insert({
+            user_id: user.id,
+            monthly_post_limit: monthlyPostLimit,
+            monthly_posts_used: 0,
+            subscription_tier: tier
+          });
       }
 
       // Get correct monthly posts used value
@@ -174,7 +226,7 @@ export const useSubscriptionFeatures = () => {
     fetchSubscriptionFeatures();
   }, [fetchSubscriptionFeatures, refreshTrigger]);
 
-  // Set up periodic refresh every 30 seconds to check for plan changes
+  // Set up periodic refresh every 15 seconds to check for plan changes
   useEffect(() => {
     // Only set up the interval if the user is logged in
     if (!user?.id) return;
@@ -182,7 +234,7 @@ export const useSubscriptionFeatures = () => {
     const intervalId = setInterval(() => {
       console.log("Running periodic subscription check");
       fetchSubscriptionFeatures();
-    }, 30000); // Check every 30 seconds
+    }, 15000); // Check every 15 seconds
     
     return () => clearInterval(intervalId);
   }, [user?.id, fetchSubscriptionFeatures]);
