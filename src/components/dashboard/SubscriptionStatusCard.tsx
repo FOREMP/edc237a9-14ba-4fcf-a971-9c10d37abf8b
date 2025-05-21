@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Award, Loader2Icon, PieChart, Sparkles, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
@@ -20,6 +20,36 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   const navigate = useNavigate();
   const [isManagingSubscription, setIsManagingSubscription] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [portalUrl, setPortalUrl] = useState<string | null>(null);
+
+  // Pre-fetch portal URL for better user experience
+  useEffect(() => {
+    const fetchPortalUrl = async () => {
+      if (!features.isActive) return;
+      
+      try {
+        const timestamp = Date.now();
+        const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true&ts=${timestamp}`;
+        
+        const { data, error } = await supabase.functions.invoke('customer-portal', {
+          body: { return_url: returnUrl }
+        });
+        
+        if (error || !data?.url) {
+          console.error('Error pre-fetching portal URL:', error || 'No URL returned');
+          return;
+        }
+        
+        setPortalUrl(data.url);
+      } catch (error) {
+        console.error('Error pre-fetching portal URL:', error);
+      }
+    };
+    
+    if (features.isActive) {
+      fetchPortalUrl();
+    }
+  }, [features.isActive]);
 
   const getPlanBadgeColor = (tier: string) => {
     switch (tier) {
@@ -32,6 +62,12 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   };
 
   const handleManageSubscription = async () => {
+    // If we already have the URL, use it directly for better UX
+    if (portalUrl) {
+      window.location.href = portalUrl;
+      return;
+    }
+    
     setIsManagingSubscription(true);
     try {
       toast.info("Ansluter till kundportalen...");
@@ -71,6 +107,8 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
     try {
       toast.info("Uppdaterar prenumerationsstatus...");
       refreshSubscription();
+      
+      // Set a timeout to ensure the UI reflects any changes
       setTimeout(() => {
         toast.success("Prenumerationsstatus uppdaterad");
         setIsRefreshing(false);
@@ -89,6 +127,11 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   
   // Determine if subscription is actually active
   const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
+
+  // Force a refresh when this component mounts
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
 
   return (
     <Card className="mb-8">

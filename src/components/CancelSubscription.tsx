@@ -17,7 +17,7 @@ const CancelSubscription = () => {
   const navigate = useNavigate();
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
 
-  // Fetch remaining jobs when component loads
+  // Fetch remaining jobs when component loads or features change
   useEffect(() => {
     const fetchRemainingJobs = async () => {
       try {
@@ -31,6 +31,8 @@ const CancelSubscription = () => {
         
         if (!error && data) {
           setRemainingJobs(Math.max(0, data.monthly_post_limit - data.monthly_posts_used));
+        } else if (error && error.code !== 'PGRST116') {
+          console.error("Error fetching remaining jobs:", error);
         }
       } catch (err) {
         console.error("Error fetching remaining jobs:", err);
@@ -127,6 +129,11 @@ const CancelSubscription = () => {
 
   // Detect if the subscription is actually active
   const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
+
+  // Force a refresh of subscription data when this component mounts
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
 
   return (
     <Card>

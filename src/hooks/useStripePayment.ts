@@ -24,13 +24,15 @@ export const useStripePayment = () => {
     try {
       console.log('Initierar betalning för plan:', plan);
       
-      // Add test mode parameter and a unique timestamp to prevent caching
+      const timestamp = Date.now(); // Unique timestamp for this payment attempt
+      
+      // Add test mode parameter and timestamp to prevent caching
       const { data, error } = await supabase.functions.invoke('create-checkout', {
         body: { 
           plan,
           test_mode: true, // Always use test mode in development
-          timestamp: Date.now(), // Prevent caching
-          return_url: `${window.location.origin}/dashboard?payment_success=true&plan=${plan}&ts=${Date.now()}`
+          timestamp: timestamp, // Prevent caching
+          return_url: `${window.location.origin}/dashboard?payment_success=true&plan=${plan}&ts=${timestamp}`
         }
       });
       

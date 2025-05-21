@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useSubscriptionFeatures } from './useSubscriptionFeatures';
 
 export const useSubscriptionStatus = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { features, loading, refreshSubscription } = useSubscriptionFeatures();
   const refreshTimeoutRef = useRef<number | null>(null);
   const [hasProcessedPayment, setHasProcessedPayment] = useState(false);
@@ -50,9 +50,11 @@ export const useSubscriptionStatus = () => {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Refresh subscription data with a slight delay to ensure backend has updated
+      // Immediate refresh followed by a delayed one to ensure backend has updated
+      refreshSubscription();
+      
       refreshTimeoutRef.current = window.setTimeout(() => {
-        console.log("Refreshing after successful payment");
+        console.log("Second refresh after successful payment");
         refreshSubscription();
         refreshTimeoutRef.current = null;
       }, 1500);
@@ -83,12 +85,18 @@ export const useSubscriptionStatus = () => {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Refresh subscription data with a slight delay to ensure backend has updated
-      refreshTimeoutRef.current = window.setTimeout(() => {
-        console.log("Refreshing after subscription update");
-        refreshSubscription();
-        refreshTimeoutRef.current = null;
-      }, 1500);
+      // Immediate refresh followed by several delayed ones to ensure the backend has fully updated
+      refreshSubscription();
+      
+      // Schedule multiple refreshes with increasing delays to catch any backend propagation delays
+      const refreshDelays = [1000, 3000, 6000];
+      
+      refreshDelays.forEach((delay, index) => {
+        setTimeout(() => {
+          console.log(`Additional refresh ${index + 1} after subscription update`);
+          refreshSubscription();
+        }, delay);
+      });
     }
     
     // Cleanup on unmount

@@ -52,6 +52,9 @@ serve(async (req) => {
     // Add timestamp to prevent caching and ensure subscription_updated is recognized
     const baseReturnUrl = body?.return_url || `${req.headers.get("origin") || "http://localhost:3000"}/dashboard`;
     const timestamp = Date.now();
+    
+    // This is crucial: we add a subscription_updated=true parameter to the URL
+    // along with a timestamp to ensure the app knows to refresh the subscription data
     const return_url = baseReturnUrl.includes('?') 
       ? `${baseReturnUrl}&subscription_updated=true&ts=${timestamp}` 
       : `${baseReturnUrl}?subscription_updated=true&ts=${timestamp}`;

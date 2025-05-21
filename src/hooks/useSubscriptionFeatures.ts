@@ -23,6 +23,7 @@ export const useSubscriptionFeatures = () => {
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
+  const [consecutiveRefreshCount, setConsecutiveRefreshCount] = useState(0);
   const [features, setFeatures] = useState<SubscriptionFeatures>({
     monthlyPostLimit: 1,
     monthlyPostsUsed: 0,
@@ -38,16 +39,32 @@ export const useSubscriptionFeatures = () => {
 
   const refreshSubscription = useCallback(() => {
     const now = Date.now();
-    // Prevent multiple refreshes within a short time window (1 second)
-    if (now - lastRefreshTime < 1000) {
+    
+    // Basic throttling - prevent multiple refreshes within 500ms
+    if (now - lastRefreshTime < 500) {
       console.log("Throttling rapid subscription refresh attempts");
       return;
     }
     
-    console.log("Refreshing subscription data");
+    // Track consecutive refreshes within a short time window
+    if (now - lastRefreshTime < 2000) {
+      setConsecutiveRefreshCount(prev => prev + 1);
+    } else {
+      setConsecutiveRefreshCount(1); // Reset if outside the window
+    }
+    
+    // Apply increasing delay for rapid successive refreshes to prevent hammering the API
+    const refreshDelay = Math.min(consecutiveRefreshCount * 100, 1000);
+    
+    console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
     setLastRefreshTime(now);
-    setRefreshTrigger(prev => prev + 1);
-  }, [lastRefreshTime]);
+    
+    // Use setTimeout to apply the adaptive delay
+    setTimeout(() => {
+      setRefreshTrigger(prev => prev + 1);
+    }, refreshDelay);
+    
+  }, [lastRefreshTime, consecutiveRefreshCount]);
 
   // Function to fetch subscription status
   const fetchSubscriptionFeatures = useCallback(async () => {
@@ -75,7 +92,7 @@ export const useSubscriptionFeatures = () => {
       if (subscriberCount && subscriberCount > 0) {
         const result = await supabase
           .from('subscribers')
-          .select('subscription_tier, subscribed, subscription_end, updated_at')
+          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
           .eq('user_id', user.id)
           .maybeSingle();
         
@@ -227,8 +244,8 @@ export const useSubscriptionFeatures = () => {
   }, [fetchSubscriptionFeatures, refreshTrigger]);
 
   // Set up periodic refresh every 15 seconds to check for plan changes
+  // but only if the user is authenticated
   useEffect(() => {
-    // Only set up the interval if the user is logged in
     if (!user?.id) return;
     
     const intervalId = setInterval(() => {
@@ -237,6 +254,15 @@ export const useSubscriptionFeatures = () => {
     }, 15000); // Check every 15 seconds
     
     return () => clearInterval(intervalId);
+  }, [user?.id, fetchSubscriptionFeatures]);
+
+  // Add a special effect to refresh subscription data when the component mounts
+  // and when the user changes
+  useEffect(() => {
+    if (user?.id) {
+      console.log("User changed or component mounted, refreshing subscription");
+      fetchSubscriptionFeatures();
+    }
   }, [user?.id, fetchSubscriptionFeatures]);
 
   return { features, loading, refreshSubscription };
