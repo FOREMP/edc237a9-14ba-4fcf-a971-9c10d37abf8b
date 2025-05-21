@@ -104,8 +104,7 @@ export const useSubscriptionFeatures = () => {
           .from('subscribers')
           .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
           .eq('user_id', user.id)
-          .maybeSingle()
-          .abortSignal(new AbortController().signal); // Force a fresh request
+          .maybeSingle();
         
         subscriberData = result.data;
         subscriberError = result.error;
@@ -125,8 +124,7 @@ export const useSubscriptionFeatures = () => {
           .from('job_posting_limits')
           .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
           .eq('user_id', user.id)
-          .maybeSingle()
-          .abortSignal(new AbortController().signal); // Force a fresh request
+          .maybeSingle();
           
         limitsData = result.data;
         limitsError = result.error;
