@@ -9,25 +9,41 @@ import { useAuth } from "@/hooks/useAuth";
 import { useStripePayment } from "@/hooks/useStripePayment";
 import { useSearchParams } from 'react-router-dom';
 import { toast } from "sonner";
+import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
 
 const PricingPage = () => {
   const { isAuthenticated } = useAuth();
   const { handlePayment, isLoading } = useStripePayment();
   const [searchParams] = useSearchParams();
   const [showTestCardInfo, setShowTestCardInfo] = useState(false);
+  const { refreshSubscription } = useSubscriptionFeatures();
   
   const calculateDailyPrice = (monthlyPrice: number) => {
     return (monthlyPrice / 30).toFixed(2);
   };
   
   useEffect(() => {
+    // Check if user has returned from payment flow
     if (searchParams.get('payment_success') === 'true') {
-      toast.success('Betalningen genomfördes framgångsrikt!');
+      // Toast will be handled by useSubscriptionStatus hook
+      refreshSubscription();
     }
+    
+    // Handle payment cancellation
     if (searchParams.get('payment_cancelled') === 'true') {
       toast.info('Betalningen avbröts');
     }
-  }, [searchParams]);
+    
+    // Handle return from customer portal
+    if (searchParams.get('portal_return') === 'true') {
+      toast.info('Prenumerationsinformation uppdaterad');
+      refreshSubscription();
+      
+      // Remove parameter from URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [searchParams, refreshSubscription]);
 
   const handleButtonClick = (plan: 'basic' | 'standard' | 'premium' | 'single') => {
     setShowTestCardInfo(true);

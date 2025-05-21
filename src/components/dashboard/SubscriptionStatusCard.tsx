@@ -1,8 +1,9 @@
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Award, Loader2Icon, PieChart, Sparkles } from "lucide-react";
+import { Award, Loader2Icon, PieChart, Sparkles, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +19,7 @@ interface SubscriptionStatusCardProps {
 const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }: SubscriptionStatusCardProps) => {
   const navigate = useNavigate();
   const [isManagingSubscription, setIsManagingSubscription] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const getPlanBadgeColor = (tier: string) => {
     switch (tier) {
@@ -57,6 +59,22 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
     }
   };
 
+  const handleRefreshSubscription = async () => {
+    setIsRefreshing(true);
+    try {
+      toast.info("Uppdaterar prenumerationsstatus...");
+      refreshSubscription();
+      setTimeout(() => {
+        toast.success("Prenumerationsstatus uppdaterad");
+        setIsRefreshing(false);
+      }, 1500);
+    } catch (error) {
+      console.error('Refresh error:', error);
+      toast.error('Kunde inte uppdatera prenumerationsstatus');
+      setIsRefreshing(false);
+    }
+  };
+
   // Calculate the used vs total jobs based on the subscription tier
   const usedJobs = features.monthlyPostsUsed || 0;
   const totalJobs = features.monthlyPostLimit;
@@ -69,13 +87,29 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
           <CardTitle className="text-xl">Ditt abonnemang</CardTitle>
           <CardDescription>Hantera din prenumeration och se dina förmåner</CardDescription>
         </div>
-        <Badge className={getPlanBadgeColor(features.tier)}>
-          {features.tier === 'free' ? 'Inget abonnemang' : 
-           features.tier === 'basic' ? 'Bas' :
-           features.tier === 'standard' ? 'Standard' :
-           features.tier === 'premium' ? 'Premium' : 
-           features.tier === 'single' ? 'Enstaka annons' : 'Okänd plan'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button 
+            size="icon"
+            variant="outline"
+            className="h-8 w-8"
+            onClick={handleRefreshSubscription}
+            disabled={isRefreshing}
+            title="Uppdatera prenumerationsstatus"
+          >
+            {isRefreshing ? (
+              <Loader2Icon className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
+          <Badge className={getPlanBadgeColor(features.tier)}>
+            {features.tier === 'free' ? 'Inget abonnemang' : 
+             features.tier === 'basic' ? 'Bas' :
+             features.tier === 'standard' ? 'Standard' :
+             features.tier === 'premium' ? 'Premium' : 
+             features.tier === 'single' ? 'Enstaka annons' : 'Okänd plan'}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid md:grid-cols-3 gap-4 mb-4">
