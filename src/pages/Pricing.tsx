@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
 
 const PricingPage = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { handlePayment, isLoading } = useStripePayment();
   const [searchParams] = useSearchParams();
   const [showTestCardInfo, setShowTestCardInfo] = useState(false);
@@ -23,14 +23,17 @@ const PricingPage = () => {
   };
   
   useEffect(() => {
+    // Check authentication status
+    console.log("Auth status on pricing page:", { isAuthenticated, userId: user?.id });
+    
     // Check if user has returned from payment flow
     if (searchParams.get('payment_success') === 'true') {
-      // Toast will be handled by useSubscriptionStatus hook
+      toast.success('Betalningen genomfördes framgångsrikt');
       refreshSubscription();
     }
     
     // Handle payment cancellation
-    if (searchParams.get('payment_cancelled') === 'true') {
+    if (searchParams.get('payment_canceled') === 'true') {
       toast.info('Betalningen avbröts');
     }
     
@@ -43,7 +46,7 @@ const PricingPage = () => {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
     }
-  }, [searchParams, refreshSubscription]);
+  }, [searchParams, refreshSubscription, isAuthenticated, user]);
 
   const handleButtonClick = (plan: 'basic' | 'standard' | 'premium' | 'single') => {
     setShowTestCardInfo(true);

@@ -8,25 +8,24 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
-  
-  try {
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-      apiVersion: "2023-10-16",
-    });
 
-    // Get session auth data
+  try {
+    // Get the Stripe API key from environment
+    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeSecretKey) {
+      throw new Error("STRIPE_SECRET_KEY is not set in the environment");
+    }
+    
+    // Get authorization header
     const authorization = req.headers.get("Authorization");
     if (!authorization) {
-      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new Error("Missing authorization header");
     }
 
     // Get Supabase client
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.7.1");
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; 
     const supabase = createClient(supabaseUrl, supabaseKey);
     
     // Verify the user token
@@ -34,111 +33,56 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Invalid user token", details: userError }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      console.error("Auth error:", userError);
+      throw new Error("Invalid user token");
     }
 
-    // Parse the request body
-    let body;
-    try {
-      body = await req.json();
-    } catch {
-      body = {};
-    }
+    console.log("User authenticated for portal access:", user.id, user.email);
 
-    // Get the return_url from the request body or use the default
-    // Add timestamp to prevent caching and ensure subscription_updated is recognized
-    const baseReturnUrl = body?.return_url || `${req.headers.get("origin") || "http://localhost:3000"}/dashboard`;
-    const timestamp = Date.now();
-    
-    // CRITICAL FIX: Make sure the return URL has the subscription_updated=true parameter
-    // along with a timestamp to ensure the app knows to refresh the subscription data
-    const hasQueryParams = baseReturnUrl.includes('?');
-    let return_url = baseReturnUrl;
-    
-    // Clean up any existing subscription_updated params first to avoid duplicates
-    if (return_url.includes('subscription_updated=')) {
-      return_url = return_url.replace(/([?&])subscription_updated=true(&|$)/, '$1');
-      return_url = return_url.replace(/([?&])ts=\d+(&|$)/, '$1');
-      // Clean up any trailing & or ? after removal
-      return_url = return_url.replace(/[?&]$/, '');
-    }
-    
-    // Now add the fresh parameters
-    return_url = return_url + (hasQueryParams ? '&' : '?') + 
-      `subscription_updated=true&ts=${timestamp}`;
-    
-    console.log(`Return URL set to: ${return_url}`);
+    // Get request body
+    const { return_url } = await req.json();
 
-    // Retrieve the subscriber record
-    const { data: subscriberData, error: subscriberError } = await supabase
-      .from("subscribers")
-      .select("stripe_customer_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    
-    if (subscriberError && subscriberError.code !== "PGRST116") {
-      return new Response(JSON.stringify({ error: "Error fetching subscriber data", details: subscriberError }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    
-    // If there's no subscriber record or no customer ID, try to find it in Stripe
-    let customerId = subscriberData?.stripe_customer_id;
-    if (!customerId) {
-      console.log("No customer ID in database, searching in Stripe by email");
-      const customers = await stripe.customers.list({ 
-        email: user.email,
-        limit: 1 
-      });
-      
-      if (customers.data.length > 0) {
-        customerId = customers.data[0].id;
-        console.log(`Found customer in Stripe: ${customerId}`);
-        
-        // Update the subscriber record with the customer ID if it exists
-        if (subscriberData) {
-          await supabase
-            .from("subscribers")
-            .update({ stripe_customer_id: customerId })
-            .eq("user_id", user.id);
-        } else {
-          // Create a new subscriber record if it doesn't exist
-          await supabase
-            .from("subscribers")
-            .insert({
-              user_id: user.id,
-              email: user.email,
-              stripe_customer_id: customerId,
-              updated_at: new Date().toISOString()
-            });
-        }
-      } else {
-        return new Response(JSON.stringify({ error: "No subscription found for this user" }), {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    // Create a Stripe customer portal session
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: return_url,
+    // Initialize Stripe
+    const stripe = new Stripe(stripeSecretKey, {
+      apiVersion: "2023-10-16",
     });
 
-    return new Response(JSON.stringify({ url: session.url }), {
+    // Check if the user already has a Stripe customer ID
+    const { data: existingCustomer, error: customerError } = await supabase
+      .from("subscribers")
+      .select("stripe_customer_id, subscribed")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (customerError) {
+      console.error("Error fetching customer ID:", customerError);
+    }
+
+    if (!existingCustomer?.stripe_customer_id) {
+      console.error("No Stripe customer ID found for user");
+      throw new Error("No Stripe customer found for this user");
+    }
+
+    const customerId = existingCustomer.stripe_customer_id;
+    console.log("Found customer ID:", customerId);
+
+    // Create a portal session
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: return_url || `${req.headers.get("origin")}/dashboard?portal_return=true`,
+    });
+
+    console.log("Created portal session:", portalSession.id);
+
+    return new Response(JSON.stringify({ url: portalSession.url }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error creating customer portal session:", error);
+    console.error("Portal error:", error);
     return new Response(JSON.stringify({ 
-      error: "Failed to create portal session", 
-      details: error.message 
+      error: error.message || "Failed to create portal session",
+      details: error instanceof Error ? error.stack : undefined
     }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -9,11 +9,14 @@ type PlanType = 'basic' | 'standard' | 'premium' | 'single';
 
 export const useStripePayment = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
   const handlePayment = async (plan: PlanType) => {
-    if (!isAuthenticated) {
+    console.log('Payment attempt started for plan:', plan);
+    console.log('Authentication status:', { isAuthenticated, userId: user?.id });
+    
+    if (!isAuthenticated || !user?.id) {
       toast.info("Du måste logga in för att köpa en prenumeration");
       navigate('/auth', { state: { from: '/pricing' } });
       return;

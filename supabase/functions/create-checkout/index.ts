@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@12.18.0?target=deno";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -39,8 +40,11 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
     if (userError || !user) {
+      console.error("Auth error:", userError);
       throw new Error("Invalid user token");
     }
+
+    console.log("User authenticated:", user.id, user.email);
 
     // Parse request body
     const { plan, test_mode = true, return_url = null }: RequestBody = await req.json();
@@ -62,6 +66,7 @@ serve(async (req) => {
     // Use existing customer ID if available
     if (!customerError && existingCustomer?.stripe_customer_id) {
       customerId = existingCustomer.stripe_customer_id;
+      console.log("Using existing customer ID:", customerId);
     } else {
       // Check if customer exists in Stripe by email
       const existingStripeCustomers = await stripe.customers.list({
@@ -71,6 +76,7 @@ serve(async (req) => {
 
       if (existingStripeCustomers.data.length > 0) {
         customerId = existingStripeCustomers.data[0].id;
+        console.log("Found customer in Stripe by email:", customerId);
         
         // Update or create subscriber record with customer ID
         await supabase
@@ -89,6 +95,7 @@ serve(async (req) => {
           },
         });
         customerId = newCustomer.id;
+        console.log("Created new customer:", customerId);
         
         // Store the new customer ID in database
         await supabase
