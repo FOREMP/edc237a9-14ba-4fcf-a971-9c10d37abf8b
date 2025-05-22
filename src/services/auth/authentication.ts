@@ -1,12 +1,12 @@
-
 import { User } from "@/types";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, cleanupAuthState } from "@/integrations/supabase/client";
 import { isAdminEmail } from "@/utils/adminEmails";
 
 // List of admin emails - make sure it's consistent across the app
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
 class BaseAuthService {
+  // Change these to protected so they can be accessed by derived classes
   protected currentUser: User | null = null;
   protected authSession: any = null;
   protected authUser: any = null;
@@ -330,33 +330,18 @@ class BaseAuthService {
     
     // Ensure all Supabase auth keys are removed
     this.cleanupAuthState();
+    
+    // Redirect to auth page after logout
+    window.location.href = '/auth';
   }
   
-  // Clean up all Supabase auth tokens from storage
+  // Clean up all Supabase auth tokens from storage - use shared implementation
   protected cleanupAuthState(): void {
-    try {
-      // Remove all Supabase auth keys from localStorage
-      Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith('supabase.auth.') || key.includes('sb-') || key === 'currentUser') {
-          localStorage.removeItem(key);
-        }
-      });
-      
-      // Remove from sessionStorage if in use
-      if (typeof sessionStorage !== 'undefined') {
-        Object.keys(sessionStorage).forEach((key) => {
-          if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
-            sessionStorage.removeItem(key);
-          }
-        });
-      }
-      
-      // Reset internal state
-      this.authSession = null;
-      this.authUser = null;
-    } catch (e) {
-      console.error("Error cleaning up auth state:", e);
-    }
+    cleanupAuthState();
+    
+    // Reset internal state
+    this.authSession = null;
+    this.authUser = null;
   }
 
   // Refresh the session and fetch user profile

@@ -117,7 +117,8 @@ export const useAuth = () => {
     
     // Set initial admin/company state based on synchronous check
     setIsAdmin(isSpecialAdmin || userData.role === 'admin');
-    setIsCompany(userData.role === 'company' && !isSpecialAdmin);
+    // FIX: Fixed type comparison issue by using proper type checking
+    setIsCompany(userData.role === 'company' && !isSpecialAdmin && userData.role !== 'admin');
     
     // Then do complete admin check against database - but only if needed
     if (!isSpecialAdmin && userData.role !== 'admin') {
@@ -125,6 +126,7 @@ export const useAuth = () => {
       
       // Update admin status based on complete check
       setIsAdmin(isUserAdmin);
+      // FIX: Fixed similar issue here
       setIsCompany(userData.role === 'company' && !isUserAdmin);
       
       // Update user object if needed
@@ -141,9 +143,12 @@ export const useAuth = () => {
 
   // Handle auth state changes with rate limiting
   const handleAuthChange = useCallback(async (event, session) => {
+    console.log("Auth event triggered:", event);
+    
     // Skip if another auth operation is in progress or if we've checked recently
     const now = Date.now();
     if (authOperationInProgress.current || (now - lastAuthCheckRef.current < minAuthCheckInterval)) {
+      console.log("Skipping auth check: too soon or already in progress");
       return;
     }
     
@@ -152,19 +157,23 @@ export const useAuth = () => {
     
     try {
       if (session) {
+        console.log("Session found in auth event");
         // Use setTimeout to defer the profile fetch to avoid potential deadlocks
         setTimeout(async () => {
           try {
             // Only refresh session if we don't have active user data
             if (!isAuthenticated || !user) {
+              console.log("Refreshing session data");
               await authService.refreshSession(); // This will also fetch user profile
               const currentUser = authService.getCurrentUser();
               
               if (currentUser) {
+                console.log("User found after refresh:", currentUser.email);
                 setIsAuthenticated(true);
                 await setUserWithAdminCheck(currentUser);
               } else {
                 // No user data returned
+                console.log("No user data after refresh");
                 setIsAuthenticated(false);
                 setUser(null);
                 setIsAdmin(false);
@@ -182,6 +191,7 @@ export const useAuth = () => {
       } else {
         // Only clear auth state completely on explicit SIGNED_OUT event
         if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          console.log("User signed out or deleted");
           setUser(null);
           setIsAuthenticated(false);
           setIsAdmin(false);

@@ -1,5 +1,5 @@
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import Layout from "@/components/Layout";
 import LoginForm from "@/components/LoginForm";
@@ -13,13 +13,47 @@ const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
   
   // Get the return path from location state, or default to dashboard
   const from = location.state?.from || "/dashboard";
   
+  // Add direct session check for more reliability
   useEffect(() => {
-    console.log("Auth page loaded, checking auth state");
-    console.log("Redirect destination:", from);
+    const checkDirectSession = async () => {
+      try {
+        console.log("Auth page: Performing direct session check");
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Auth page: Session check error:", error);
+        } else if (data?.session) {
+          console.log("Auth page: Valid session found directly from Supabase");
+          // If we have a session but isAuthenticated is false, 
+          // there might be a sync issue. Force a page reload.
+          if (!isAuthenticated && !isLoading) {
+            console.log("Auth page: Found session but isAuthenticated is false, refreshing page");
+            window.location.reload();
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Auth page: Exception during session check:", err);
+      } finally {
+        setInitialCheckDone(true);
+      }
+    };
+    
+    checkDirectSession();
+  }, [isAuthenticated, isLoading]);
+  
+  useEffect(() => {
+    console.log("Auth page loaded, checking auth state", { 
+      isAuthenticated, 
+      isLoading, 
+      from, 
+      initialCheckDone
+    });
     
     // Check for auth errors in URL
     const error = searchParams.get('error');
@@ -52,13 +86,13 @@ const Auth = () => {
     }
     
     // Redirect to return path if already authenticated
-    if (!isLoading && isAuthenticated) {
+    if (initialCheckDone && !isLoading && isAuthenticated) {
       console.log("User is authenticated, redirecting to", from);
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, isLoading, navigate, from, searchParams]);
+  }, [isAuthenticated, isLoading, navigate, from, searchParams, initialCheckDone]);
   
-  if (isLoading) {
+  if (isLoading || !initialCheckDone) {
     return (
       <Layout>
         <div className="py-20">

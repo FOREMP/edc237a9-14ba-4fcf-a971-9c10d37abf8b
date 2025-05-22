@@ -2,7 +2,8 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 // Maintain a consistent list of admin emails across the app
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
@@ -30,6 +31,44 @@ const LoadingState = () => {
 const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
   const { isAuthenticated, isAdmin, isLoading, user } = useAuth();
   const location = useLocation();
+  const [showLoading, setShowLoading] = useState(true);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [sessionValid, setSessionValid] = useState(false);
+  
+  // Add an explicit session check to verify Supabase authentication
+  useEffect(() => {
+    const verifySession = async () => {
+      try {
+        console.log("ProtectedRoute: Verifying session directly with Supabase");
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("ProtectedRoute: Session verification error:", error);
+          setSessionValid(false);
+        } else {
+          const hasValidSession = !!data.session;
+          console.log("ProtectedRoute: Direct session check:", hasValidSession ? "Valid session" : "No session");
+          setSessionValid(hasValidSession);
+        }
+      } catch (err) {
+        console.error("ProtectedRoute: Exception during session verification:", err);
+        setSessionValid(false);
+      } finally {
+        setSessionChecked(true);
+      }
+    };
+    
+    verifySession();
+  }, [location.pathname]);
+
+  // Use a timeout to prevent excessive loading state for quick auth checks
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowLoading(isLoading);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   useEffect(() => {
     // Log auth status only when it changes or the path changes to prevent excessive logging
@@ -41,29 +80,33 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         path: location.pathname,
         email: user?.email,
         isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
-        role: user?.role
+        role: user?.role,
+        sessionChecked,
+        sessionValid
       });
     }
-  }, [isLoading, isAuthenticated, isAdmin, location.pathname, user]);
+  }, [isLoading, isAuthenticated, isAdmin, location.pathname, user, sessionChecked, sessionValid]);
 
-  // Show loading state while checking authentication, but with a timeout
-  // This prevents excessive loading states for quick auth checks
-  if (isLoading) {
+  // Show loading state while checking authentication
+  if (showLoading || !sessionChecked) {
     return <LoadingState />;
   }
 
   // Not authenticated - redirect to login
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !sessionValid) {
     // Store current path for redirect after login
+    console.log("ProtectedRoute: Not authenticated, redirecting to auth page");
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
   // Admin route check
   if (requireAdmin && !isAdmin && !(user?.email && ADMIN_EMAILS.includes(user.email))) {
+    console.log("ProtectedRoute: Not admin, redirecting to dashboard");
     return <Navigate to="/dashboard" replace />;
   }
 
   // Authenticated and authorized - render the children
+  console.log("ProtectedRoute: Authenticated and authorized, rendering children");
   return <>{children}</>;
 };
 
