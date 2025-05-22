@@ -97,80 +97,37 @@ export const useSubscriptionFeatures = () => {
       // Force cache busting with a unique parameter
       const cacheBuster = now.toString();
       
-      // First try to get from subscribers table
-      // Use a direct query with select count(*) to check if the record exists
-      // before attempting to fetch it to avoid "no rows returned" error logging
-      const { count: subscriberCount, error: countError } = await supabase
+      // First try to get from subscribers table directly with auth session
+      const { data: subscriberData, error: subscriberError } = await supabase
         .from('subscribers')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (countError) {
-        console.error('Error checking subscriber count:', countError);
-      }
-
-      let subscriberData = null;
-      let subscriberError = null;
-      
-      if (subscriberCount && subscriberCount > 0) {
-        // Set cache control options to force a fresh fetch from the database
-        const result = await supabase
-          .from('subscribers')
-          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: false })
-          .maybeSingle();
-        
-        subscriberData = result.data;
-        subscriberError = result.error;
-        
-        console.log("Subscriber data fetched:", subscriberData);
-      } else {
-        console.log("No subscriber record found, will check Stripe directly");
-      }
-
-      // Then get from job_posting_limits table
-      const { count: limitsCount, error: limitsCountError } = await supabase
-        .from('job_posting_limits')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      if (limitsCountError) {
-        console.error('Error checking limits count:', limitsCountError);
-      }
-
-      let limitsData = null;
-      let limitsError = null;
-      
-      if (limitsCount && limitsCount > 0) {
-        const result = await supabase
-          .from('job_posting_limits')
-          .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: false })
-          .maybeSingle();
-          
-        limitsData = result.data;
-        limitsError = result.error;
-        
-        console.log("Limits data fetched:", limitsData);
-      } else {
-        console.log("No job posting limits record found");
-      }
-
-      if (subscriberError && subscriberError.code !== 'PGRST116') {
+      if (subscriberError) {
         console.error('Error fetching subscription data:', subscriberError);
-      }
-      
-      if (limitsError && limitsError.code !== 'PGRST116') {
-        console.error('Error fetching limits data:', limitsError);
+      } else {
+        console.log("Subscriber data fetched directly:", subscriberData);
       }
 
-      // If no subscriber data or subscription has expired, try direct refresh from Stripe
+      // Get from job_posting_limits table
+      const { data: limitsData, error: limitsError } = await supabase
+        .from('job_posting_limits')
+        .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
+        .eq('user_id', user.id)
+        .maybeSingle();
+        
+      if (limitsError) {
+        console.error('Error fetching limits data:', limitsError);
+      } else {
+        console.log("Limits data fetched:", limitsData);
+      }
+
+      // If no subscriber data or subscription has expired, check with Stripe edge function
       if (!subscriberData || !subscriberData?.subscribed || 
           (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) {
         
-        console.log("No active subscription found in database, checking with Stripe directly");
+        console.log("Checking subscription status via edge function");
         
         try {
           // Call our edge function to check subscription status directly with Stripe
@@ -178,7 +135,7 @@ export const useSubscriptionFeatures = () => {
             body: { 
               timestamp: now,
               cache_buster: cacheBuster,
-              force_fresh: true // Always force fresh data from Stripe
+              force_fresh: true
             }
           });
           
@@ -186,39 +143,31 @@ export const useSubscriptionFeatures = () => {
             console.error('Error checking subscription with Stripe:', stripeError);
           } else if (stripeData) {
             console.log("Stripe subscription check result:", stripeData);
-            
-            // If Stripe found an active subscription, we should immediately see updated data
-            // Try to fetch the subscriber data again as it should have been updated by the edge function
-            if (stripeData.subscribed) {
-              const refreshResult = await supabase
-                .from('subscribers')
-                .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
-                .eq('user_id', user.id)
-                .maybeSingle();
-                
-              if (refreshResult.data) {
-                console.log("Updated subscriber data after Stripe check:", refreshResult.data);
-                subscriberData = refreshResult.data;
-              } else {
-                // Something went wrong with the update in the edge function
-                console.error("Failed to update subscriber data after Stripe check:", refreshResult.error);
-                // Use the Stripe data directly
-                subscriberData = {
-                  subscribed: stripeData.subscribed,
-                  subscription_tier: stripeData.subscription_tier,
-                  subscription_end: stripeData.subscription_end,
-                  updated_at: new Date().toISOString()
-                };
-              }
-            }
           }
         } catch (stripeCheckError) {
           console.error('Exception during Stripe subscription check:', stripeCheckError);
         }
+        
+        // Try fetching subscriber data again after the edge function updates
+        const { data: refreshedData, error: refreshError } = await supabase
+          .from('subscribers')
+          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (refreshError) {
+          console.error('Error fetching refreshed subscriber data:', refreshError);
+        } else if (refreshedData) {
+          console.log("Refreshed subscriber data:", refreshedData);
+        }
+        
+        // Use the refreshed data if available
+        if (refreshedData) {
+          subscriberData = refreshedData;
+        }
       }
 
-      // CRITICAL FIX: Always prioritize subscriber data as source of truth
-      // Since that's where Stripe webhook will update data
+      // Determine active subscription status
       let isActive = subscriberData?.subscribed || false;
       
       // Get tier from subscriber data if available, otherwise from limits data
@@ -249,63 +198,13 @@ export const useSubscriptionFeatures = () => {
 
       // If we have explicit limits data, use that limit instead
       if (limitsData?.monthly_post_limit) {
-        // Only use if it matches the expected value for the tier, otherwise use the tier-based value
-        const expectedLimit = 
-          tier === 'basic' ? 5 :
-          tier === 'standard' ? 15 :
-          tier === 'premium' ? 999 :
-          tier === 'single' ? 1 : 1;
-          
-        // If the limit in DB doesn't match what's expected for the tier, update it
-        if (limitsData.monthly_post_limit !== expectedLimit && isActive) {
-          console.log(`Fixing monthly post limit: ${limitsData.monthly_post_limit} → ${expectedLimit}`);
-          
-          // Update the limits data in the database
-          await supabase
-            .from('job_posting_limits')
-            .update({ 
-              monthly_post_limit: expectedLimit,
-              subscription_tier: tier // Also update the tier to keep them in sync
-            })
-            .eq('user_id', user.id);
-            
-          monthlyPostLimit = expectedLimit;
-        } else {
-          monthlyPostLimit = limitsData.monthly_post_limit;
-        }
-      } else if (tier !== 'free' && isActive) {
-        // If we don't have limits data but we do have a subscription tier, create a limits record
-        console.log(`Creating new job_posting_limits record for user with tier ${tier}`);
-        await supabase
-          .from('job_posting_limits')
-          .insert({
-            user_id: user.id,
-            monthly_post_limit: monthlyPostLimit,
-            monthly_posts_used: 0,
-            subscription_tier: tier
-          });
+        monthlyPostLimit = limitsData.monthly_post_limit;
       }
 
       // Get correct monthly posts used value
       const monthlyPostsUsed = limitsData?.monthly_posts_used || 0;
 
-      // Additional consistency check - if subscriber table and limits table have
-      // different tiers, update the limits table to match the subscriber table
-      if (subscriberData && limitsData && isActive &&
-          subscriberData.subscription_tier !== limitsData.subscription_tier) {
-        console.log(`Fixing subscription tier mismatch: limits=${limitsData.subscription_tier}, subscriber=${subscriberData.subscription_tier}`);
-        
-        await supabase
-          .from('job_posting_limits')
-          .update({ 
-            subscription_tier: subscriberData.subscription_tier,
-            monthly_post_limit: monthlyPostLimit
-          })
-          .eq('user_id', user.id);
-      }
-
-      // CRITICAL FIX: Properly assign features according to the correct tier specifications
-      // This is the key fix for ensuring features match the selected plan
+      // CRITICAL FIX: Correctly assign features according to tier specifications
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
@@ -313,9 +212,9 @@ export const useSubscriptionFeatures = () => {
         monthlyPostLimit,
         monthlyPostsUsed,
         // Basic tier and above has basic stats
-        hasBasicStats: isActive && ['basic', 'standard', 'premium'].includes(tier),
+        hasBasicStats: isActive && (tier === 'basic' || tier === 'standard' || tier === 'premium'),
         // Standard and Premium tiers have job view statistics
-        hasJobViewStats: isActive && ['standard', 'premium'].includes(tier),
+        hasJobViewStats: isActive && (tier === 'standard' || tier === 'premium'),
         // Only Premium tier has advanced stats
         hasAdvancedStats: isActive && tier === 'premium',
         // Only Premium can boost posts
@@ -324,18 +223,9 @@ export const useSubscriptionFeatures = () => {
         hasPrioritySupport: isActive && tier === 'premium'
       };
 
-      // Check if period has expired and reset counter if needed
-      if (limitsData?.current_period_end && new Date(limitsData.current_period_end) < new Date()) {
-        console.log("Current period has expired, resetting counter");
-        await supabase.rpc('reset_post_count', {
-          user_id: user.id
-        });
-        updatedFeatures.monthlyPostsUsed = 0;
-      }
-
       console.log("Setting updated features:", updatedFeatures);
       setFeatures(updatedFeatures);
-      setLoading(false); // Set loading to false as soon as we have data
+      setLoading(false);
     } catch (error) {
       console.error('Error in useSubscriptionFeatures:', error);
       setLoading(false);

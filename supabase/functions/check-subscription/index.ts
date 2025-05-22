@@ -44,7 +44,12 @@ serve(async (req) => {
       throw new Error("Missing Supabase configuration");
     }
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      }
+    });
     
     // Verify the user token
     const token = authorization.replace("Bearer ", "");
@@ -82,11 +87,15 @@ serve(async (req) => {
     });
 
     // First, check if the user has a Stripe customer ID
-    let { data: existingSubscriber } = await supabase
+    const { data: existingSubscriber, error: subscriberError } = await supabase
       .from("subscribers")
-      .select("stripe_customer_id, subscription_tier")
+      .select("stripe_customer_id, subscription_tier, subscribed, subscription_end")
       .eq("user_id", user.id)
       .maybeSingle();
+
+    if (subscriberError) {
+      console.error('Error fetching subscriber data:', subscriberError);
+    }
 
     let customerId = existingSubscriber?.stripe_customer_id;
     
@@ -106,13 +115,21 @@ serve(async (req) => {
         console.log("No Stripe customer found for email", user.email);
         
         // Create or update the subscriber record to show no subscription
-        await supabase.from("subscribers").upsert({
-          user_id: user.id,
-          email: user.email,
-          subscribed: false,
-          subscription_tier: "free",
-          updated_at: new Date().toISOString()
-        }, { onConflict: "user_id" });
+        const { error: upsertError } = await supabase
+          .from("subscribers")
+          .upsert({
+            user_id: user.id,
+            email: user.email,
+            subscribed: false,
+            subscription_tier: "free",
+            updated_at: new Date().toISOString()
+          });
+        
+        if (upsertError) {
+          console.error("Error upserting subscriber record:", upsertError);
+        } else {
+          console.log("Created/updated free subscriber record successfully");
+        }
         
         const resultData = { 
           subscribed: false,
@@ -209,20 +226,23 @@ serve(async (req) => {
       }
     }
 
-    // Update database with subscription status - always use onConflict: "user_id" to ensure proper updating
-    const updateResult = await supabase.from("subscribers").upsert({
-      user_id: user.id,
-      email: user.email,
-      stripe_customer_id: customerId,
-      subscribed: isSubscribed,
-      subscription_tier: subscriptionTier,
-      subscription_end: subscriptionEnd,
-      subscription_id: subscriptionId,
-      updated_at: new Date().toISOString()
-    }, { onConflict: "user_id" });
+    // Always update the subscribers table with the latest information
+    // This is critical for subscription persistence
+    const { error: upsertError } = await supabase
+      .from("subscribers")
+      .upsert({
+        user_id: user.id,
+        email: user.email,
+        stripe_customer_id: customerId,
+        subscribed: isSubscribed,
+        subscription_tier: subscriptionTier,
+        subscription_end: subscriptionEnd,
+        subscription_id: subscriptionId,
+        updated_at: new Date().toISOString()
+      });
     
-    if (updateResult.error) {
-      console.error("Error updating subscriber record:", updateResult.error);
+    if (upsertError) {
+      console.error("Error updating subscriber record:", upsertError);
     } else {
       console.log("Subscriber record updated successfully");
     }
@@ -235,15 +255,17 @@ serve(async (req) => {
       else if (subscriptionTier === 'premium') monthlyPostLimit = 999;
       else if (subscriptionTier === 'single') monthlyPostLimit = 1;
       
-      const limitsResult = await supabase.from("job_posting_limits").upsert({
-        user_id: user.id,
-        subscription_tier: subscriptionTier,
-        monthly_post_limit: monthlyPostLimit,
-        updated_at: new Date().toISOString()
-      }, { onConflict: "user_id" });
+      const { error: limitsError } = await supabase
+        .from("job_posting_limits")
+        .upsert({
+          user_id: user.id,
+          subscription_tier: subscriptionTier,
+          monthly_post_limit: monthlyPostLimit,
+          updated_at: new Date().toISOString()
+        });
       
-      if (limitsResult.error) {
-        console.error("Error updating job posting limits:", limitsResult.error);
+      if (limitsError) {
+        console.error("Error updating job posting limits:", limitsError);
       } else {
         console.log("Job posting limits updated successfully");
       }
