@@ -58,13 +58,13 @@ export const useStripePayment = () => {
       }
       
       if (data.error) {
+        console.error('Betalningsfunktion returnerade fel:', data.error);
+        
         if (data.error.includes('testnycklar')) {
           toast.error('Stripe är konfigurerad med en produktionsnyckel. Kontakta administratören för att byta till testnyckel.');
-          console.error('Stripe konfigurationsfel:', data.error);
         } else if (data.error.includes('card declined')) {
           toast.error('Kortet avvisades. För testmode, använd kortnummer 4242 4242 4242 4242.');
         } else {
-          console.error('Betalningsfunktion returnerade fel:', data.error);
           toast.error(`Betalningsfel: ${data.error}`);
         }
         return;
