@@ -29,7 +29,12 @@ serve(async (req) => {
     const authorization = req.headers.get("Authorization");
     if (!authorization) {
       console.error("Missing authorization header");
-      throw new Error("Missing authorization header");
+      return new Response(JSON.stringify({ 
+        error: "Missing authorization header. Please ensure you are logged in."
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Get Supabase client
@@ -50,12 +55,22 @@ serve(async (req) => {
     
     if (userError) {
       console.error("Auth error:", userError);
-      throw new Error(`Invalid user token: ${userError.message}`);
+      return new Response(JSON.stringify({ 
+        error: `Authentication error: ${userError.message}`
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     if (!user) {
       console.error("No user found in token");
-      throw new Error("No user found in token");
+      return new Response(JSON.stringify({ 
+        error: "No user found. Please login again."
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("User authenticated:", user.id, user.email);
@@ -66,14 +81,24 @@ serve(async (req) => {
       body = await req.json();
     } catch (error) {
       console.error("Error parsing request body:", error);
-      throw new Error("Failed to parse request body");
+      return new Response(JSON.stringify({ 
+        error: "Failed to parse request body"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     const { plan, test_mode = true, return_url = null, timestamp = Date.now() } = body;
     
     if (!plan) {
       console.error("No plan specified");
-      throw new Error("No plan specified");
+      return new Response(JSON.stringify({ 
+        error: "No plan specified"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("Payment request:", { plan, test_mode, timestamp });
@@ -90,7 +115,7 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (customerError) {
+    if (customerError && customerError.code !== 'PGRST116') {
       console.error("Error fetching customer info:", customerError);
     }
 
@@ -141,40 +166,86 @@ serve(async (req) => {
             });
         } catch (error) {
           console.error("Failed to create Stripe customer:", error);
-          throw new Error(`Failed to create Stripe customer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          return new Response(JSON.stringify({ 
+            error: `Failed to create Stripe customer: ${error instanceof Error ? error.message : 'Unknown error'}`
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
       }
     }
 
-    // Set up prices based on plan
-    let priceId;
+    // Create prices dynamically instead of using hardcoded price IDs
+    let priceData;
     let mode = "subscription";
 
-    // Test mode price IDs - should match your Stripe dashboard
     if (plan === "basic") {
-      priceId = "price_1O1qfxJcECj02lzmYLgjFO4F"; // Basic plan
+      priceData = {
+        currency: "sek",
+        product_data: {
+          name: "Basic Plan",
+          description: "Up to 5 job postings per month",
+        },
+        unit_amount: 35000, // 350 SEK in öre
+        recurring: {
+          interval: "month",
+        },
+      };
     } else if (plan === "standard") {
-      priceId = "price_1O1qfOJcECj02lzmg6fI3s83"; // Standard plan
+      priceData = {
+        currency: "sek",
+        product_data: {
+          name: "Standard Plan",
+          description: "Up to 15 job postings per month",
+        },
+        unit_amount: 75000, // 750 SEK in öre
+        recurring: {
+          interval: "month",
+        },
+      };
     } else if (plan === "premium") {
-      priceId = "price_1O1qeWJcECj02lzmdUPlaT4m"; // Premium plan
+      priceData = {
+        currency: "sek",
+        product_data: {
+          name: "Premium Plan",
+          description: "Unlimited job postings per month",
+        },
+        unit_amount: 120000, // 1200 SEK in öre
+        recurring: {
+          interval: "month",
+        },
+      };
     } else if (plan === "single") {
-      priceId = "price_1O6OOiJcECj02lzmOu6xrG7w"; // Single job posting
+      priceData = {
+        currency: "sek",
+        product_data: {
+          name: "Single Job Posting",
+          description: "One-time job posting",
+        },
+        unit_amount: 10000, // 100 SEK in öre
+      };
       mode = "payment"; // One-time payment
     } else {
-      throw new Error(`Unknown plan: ${plan}`);
+      return new Response(JSON.stringify({ 
+        error: `Unknown plan: ${plan}`
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     // Determine success URL based on whether a return_url is provided
     const successUrl = return_url || `${req.headers.get("origin")}/dashboard?payment_success=true&plan=${plan}&ts=${timestamp}`;
     console.log(`Success URL set to: ${successUrl}`);
 
-    // Create checkout session
+    // Create checkout session with dynamically created price
     try {
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         line_items: [
           {
-            price: priceId,
+            price_data: priceData,
             quantity: 1,
           },
         ],

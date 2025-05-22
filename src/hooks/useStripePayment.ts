@@ -40,11 +40,13 @@ export const useStripePayment = () => {
       });
       
       if (error) {
-        console.error('Stripe funktionsfel:', error);
+        console.error('Edge Function error:', error);
         
-        if (error.message?.includes('Edge Function returned a non-2xx status code')) {
-          toast.error('Ett fel uppstod vid anslutning till betalningsgränssnittet. Kontakta administratören.');
-          console.error('Supabase funktionsfel: Edge Function returned a non-2xx status code');
+        if (error.message?.includes('Failed to fetch')) {
+          toast.error('Kunde inte ansluta till betalningsgränssnittet. Kontrollera din internetanslutning och försök igen.');
+        } else if (error.message?.includes('401')) {
+          toast.error('Du behöver logga in på nytt för att fortsätta.');
+          navigate('/auth');
         } else {
           toast.error(`Ett fel uppstod: ${error.message || 'Kunde inte skapa betalningssession'}`);
         }
@@ -77,7 +79,8 @@ export const useStripePayment = () => {
         localStorage.setItem('stripe_checkout_timestamp', timestamp.toString());
         localStorage.setItem('stripe_checkout_plan', plan);
         
-        window.location.href = data.url;
+        // Open in new tab instead of redirecting
+        window.open(data.url, '_blank');
       } else {
         console.error('Ingen URL returnerades:', data);
         toast.error('Kunde inte skapa betalningslänk. Försök igen senare.');

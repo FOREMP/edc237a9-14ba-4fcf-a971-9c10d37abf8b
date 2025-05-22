@@ -21,7 +21,12 @@ serve(async (req) => {
     const authorization = req.headers.get("Authorization");
     if (!authorization) {
       console.error("Missing authorization header");
-      throw new Error("Missing authorization header");
+      return new Response(JSON.stringify({ 
+        error: "Missing authorization header. Please ensure you are logged in."
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Get Supabase client
@@ -42,7 +47,12 @@ serve(async (req) => {
     
     if (userError || !user) {
       console.error("Auth error:", userError);
-      throw new Error("Invalid user token");
+      return new Response(JSON.stringify({ 
+        error: userError ? userError.message : "Invalid user token"
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("User authenticated for portal access:", user.id, user.email);
@@ -76,7 +86,12 @@ serve(async (req) => {
 
     if (!existingCustomer?.stripe_customer_id) {
       console.error("No Stripe customer ID found for user");
-      throw new Error("No Stripe customer found for this user");
+      return new Response(JSON.stringify({ 
+        error: "No Stripe customer found for this user. Please purchase a plan first."
+      }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const customerId = existingCustomer.stripe_customer_id;
