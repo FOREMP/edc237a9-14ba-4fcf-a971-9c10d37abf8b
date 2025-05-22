@@ -126,8 +126,8 @@ export const useAuth = () => {
       
       // Update admin status based on complete check
       setIsAdmin(isUserAdmin);
-      // FIX: Fixed similar issue here
-      setIsCompany(userData.role === 'company' && !isUserAdmin);
+      // FIX: Fixed similar issue here by using proper type check
+      setIsCompany(!isUserAdmin && userData.role === 'company');
       
       // Update user object if needed
       if (isUserAdmin && userData.role !== 'admin') {
