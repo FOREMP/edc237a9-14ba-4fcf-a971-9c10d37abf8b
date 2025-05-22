@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -149,9 +150,10 @@ export const useSubscriptionFeatures = () => {
         }
         
         // Try fetching subscriber data again after the edge function updates
+        // Make sure we include stripe_customer_id field in the SELECT query this time
         const { data: refreshedData, error: refreshError } = await supabase
           .from('subscribers')
-          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
+          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
           .eq('user_id', user.id)
           .maybeSingle();
           
