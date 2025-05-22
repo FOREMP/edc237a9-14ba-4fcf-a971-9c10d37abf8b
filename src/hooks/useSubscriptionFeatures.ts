@@ -250,14 +250,14 @@ export const useSubscriptionFeatures = () => {
     fetchSubscriptionFeatures();
   }, [fetchSubscriptionFeatures, refreshTrigger]);
 
-  // Set up periodic refresh every 60 seconds (increased from 15 to reduce strain)
+  // Set up periodic refresh every 120 seconds (increased from 60 to reduce strain)
   useEffect(() => {
     if (!user?.id) return;
     
     const intervalId = setInterval(() => {
       console.log("Running periodic subscription check");
       fetchSubscriptionFeatures();
-    }, 60000); // Check every 60 seconds instead of 15
+    }, 120000); // Check every 120 seconds instead of 60
     
     return () => clearInterval(intervalId);
   }, [user?.id, fetchSubscriptionFeatures]);

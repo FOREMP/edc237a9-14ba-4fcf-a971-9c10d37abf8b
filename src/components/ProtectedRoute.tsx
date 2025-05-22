@@ -32,6 +32,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   const location = useLocation();
 
   useEffect(() => {
+    // Log auth status only when it changes or the path changes to prevent excessive logging
     console.log("ProtectedRoute: Auth status -", { 
       isLoading, 
       isAuthenticated, 
@@ -52,6 +53,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   // Not authenticated - redirect to login
   if (!isAuthenticated) {
     console.log("ProtectedRoute: User not authenticated, redirecting to auth page");
+    // Store current path for redirect after login
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
@@ -61,7 +63,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Authenticated and authorized
+  // Authenticated and authorized - render the children
   console.log("ProtectedRoute: User authenticated and authorized, rendering children");
   return <>{children}</>;
 };

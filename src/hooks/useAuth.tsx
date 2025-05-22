@@ -16,6 +16,7 @@ export const useAuth = () => {
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
   const [lastAuthCheck, setLastAuthCheck] = useState<number>(0);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
 
   // Load user preferences
   const loadUserPreferences = async () => {
@@ -153,7 +154,7 @@ export const useAuth = () => {
     
     const now = Date.now();
     // Deduplicate rapid auth change events
-    if (now - lastAuthCheck < 300) {
+    if (now - lastAuthCheck < 500) {
       console.log("Skipping rapid auth change event");
       return;
     }
@@ -164,19 +165,22 @@ export const useAuth = () => {
       // Use setTimeout to defer the profile fetch to avoid potential deadlocks
       setTimeout(async () => {
         try {
-          await authService.refreshSession(); // This will also fetch user profile
-          const currentUser = authService.getCurrentUser();
-          
-          if (currentUser) {
-            setIsAuthenticated(true);
-            await setUserWithAdminCheck(currentUser);
-          } else {
-            // No user data returned
-            setIsAuthenticated(false);
-            setUser(null);
-            setIsAdmin(false);
-            setIsCompany(false);
-            setAdminCheckComplete(true);
+          // Only refresh session if we don't have active user data
+          if (!isAuthenticated || !user) {
+            await authService.refreshSession(); // This will also fetch user profile
+            const currentUser = authService.getCurrentUser();
+            
+            if (currentUser) {
+              setIsAuthenticated(true);
+              await setUserWithAdminCheck(currentUser);
+            } else {
+              // No user data returned
+              setIsAuthenticated(false);
+              setUser(null);
+              setIsAdmin(false);
+              setIsCompany(false);
+              setAdminCheckComplete(true);
+            }
           }
         } catch (error) {
           console.error("Error refreshing session:", error);
@@ -196,9 +200,12 @@ export const useAuth = () => {
         setAdminCheckComplete(true);
       }
     }
-  }, [setUserWithAdminCheck, lastAuthCheck]);
+  }, [setUserWithAdminCheck, lastAuthCheck, isAuthenticated, user]);
 
   useEffect(() => {
+    // Skip if we've already initialized
+    if (authInitialized) return;
+    
     let mounted = true;
     
     console.log("Setting up auth listener");
@@ -247,6 +254,9 @@ export const useAuth = () => {
           setIsCompany(false);
           setAdminCheckComplete(true);
         }
+        
+        // Mark auth as initialized to prevent re-initialization
+        setAuthInitialized(true);
       } catch (error) {
         console.error("Error initializing auth:", error);
       } finally {
@@ -263,7 +273,7 @@ export const useAuth = () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [setUserWithAdminCheck, handleAuthChange]);
+  }, [setUserWithAdminCheck, handleAuthChange, authInitialized]);
 
   // Load preferences when auth status changes
   useEffect(() => {

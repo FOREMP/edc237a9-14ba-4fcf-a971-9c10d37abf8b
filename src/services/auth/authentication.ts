@@ -1,4 +1,3 @@
-
 import { User } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminEmail } from "@/utils/adminEmails";
@@ -380,7 +379,7 @@ class BaseAuthService {
         }
       } else {
         // No active session, clear the current user
-        this.setCurrentUser(null);
+        // Don't clear the user here to avoid flickering - only do this on explicit logout
         return false;
       }
     } catch (e) {
