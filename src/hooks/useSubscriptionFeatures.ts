@@ -97,7 +97,7 @@ export const useSubscriptionFeatures = () => {
       // Force cache busting with a unique parameter
       const cacheBuster = now.toString();
       
-      // IMPORTANT CHANGE: First try to get from subscribers table with a fresh policy
+      // First try to get from subscribers table
       // Use a direct query with select count(*) to check if the record exists
       // before attempting to fetch it to avoid "no rows returned" error logging
       const { count: subscriberCount, error: countError } = await supabase
@@ -129,7 +129,7 @@ export const useSubscriptionFeatures = () => {
         console.log("No subscriber record found, will check Stripe directly");
       }
 
-      // Then get from job_posting_limits table with fresh policy
+      // Then get from job_posting_limits table
       const { count: limitsCount, error: limitsCountError } = await supabase
         .from('job_posting_limits')
         .select('*', { count: 'exact', head: true })
@@ -177,7 +177,8 @@ export const useSubscriptionFeatures = () => {
           const { data: stripeData, error: stripeError } = await supabase.functions.invoke('check-subscription', {
             body: { 
               timestamp: now,
-              cache_buster: cacheBuster
+              cache_buster: cacheBuster,
+              force_fresh: true // Always force fresh data from Stripe
             }
           });
           
@@ -201,6 +202,13 @@ export const useSubscriptionFeatures = () => {
               } else {
                 // Something went wrong with the update in the edge function
                 console.error("Failed to update subscriber data after Stripe check:", refreshResult.error);
+                // Use the Stripe data directly
+                subscriberData = {
+                  subscribed: stripeData.subscribed,
+                  subscription_tier: stripeData.subscription_tier,
+                  subscription_end: stripeData.subscription_end,
+                  updated_at: new Date().toISOString()
+                };
               }
             }
           }
@@ -221,8 +229,7 @@ export const useSubscriptionFeatures = () => {
         tier = limitsData.subscription_tier as SubscriptionTier;
       }
       
-      // CRITICAL FIX: If subscription_id is missing or if subscription_end date is in the past, 
-      // the subscription is no longer active
+      // If subscription_end date is in the past, the subscription is no longer active
       const expiresAt = subscriberData?.subscription_end ? new Date(subscriberData.subscription_end) : null;
       if (expiresAt && expiresAt < new Date()) {
         console.log("Subscription expired at:", expiresAt);
@@ -250,7 +257,7 @@ export const useSubscriptionFeatures = () => {
           tier === 'single' ? 1 : 1;
           
         // If the limit in DB doesn't match what's expected for the tier, update it
-        if (limitsData.monthly_post_limit !== expectedLimit) {
+        if (limitsData.monthly_post_limit !== expectedLimit && isActive) {
           console.log(`Fixing monthly post limit: ${limitsData.monthly_post_limit} → ${expectedLimit}`);
           
           // Update the limits data in the database
@@ -266,7 +273,7 @@ export const useSubscriptionFeatures = () => {
         } else {
           monthlyPostLimit = limitsData.monthly_post_limit;
         }
-      } else if (tier !== 'free') {
+      } else if (tier !== 'free' && isActive) {
         // If we don't have limits data but we do have a subscription tier, create a limits record
         console.log(`Creating new job_posting_limits record for user with tier ${tier}`);
         await supabase
@@ -282,9 +289,9 @@ export const useSubscriptionFeatures = () => {
       // Get correct monthly posts used value
       const monthlyPostsUsed = limitsData?.monthly_posts_used || 0;
 
-      // CRITICAL FIX: Additional consistency check - if subscriber table and limits table have
+      // Additional consistency check - if subscriber table and limits table have
       // different tiers, update the limits table to match the subscriber table
-      if (subscriberData && limitsData && 
+      if (subscriberData && limitsData && isActive &&
           subscriberData.subscription_tier !== limitsData.subscription_tier) {
         console.log(`Fixing subscription tier mismatch: limits=${limitsData.subscription_tier}, subscriber=${subscriberData.subscription_tier}`);
         
@@ -297,24 +304,24 @@ export const useSubscriptionFeatures = () => {
           .eq('user_id', user.id);
       }
 
-      // Determine features based on subscription tier
-      // FIXED: Properly assign features according to the correct tier specifications
+      // CRITICAL FIX: Properly assign features according to the correct tier specifications
+      // This is the key fix for ensuring features match the selected plan
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
         expiresAt,
         monthlyPostLimit,
         monthlyPostsUsed,
-        // Basic tier has NO stats
-        hasBasicStats: false,
-        // FIXED: Standard and Premium tiers have job view statistics
-        hasJobViewStats: (tier === 'standard' || tier === 'premium') && isActive,
+        // Basic tier and above has basic stats
+        hasBasicStats: isActive && ['basic', 'standard', 'premium'].includes(tier),
+        // Standard and Premium tiers have job view statistics
+        hasJobViewStats: isActive && ['standard', 'premium'].includes(tier),
         // Only Premium tier has advanced stats
-        hasAdvancedStats: tier === 'premium' && isActive,
+        hasAdvancedStats: isActive && tier === 'premium',
         // Only Premium can boost posts
-        canBoostPosts: tier === 'premium' && isActive,
+        canBoostPosts: isActive && tier === 'premium',
         // Only Premium has priority support
-        hasPrioritySupport: tier === 'premium' && isActive
+        hasPrioritySupport: isActive && tier === 'premium'
       };
 
       // Check if period has expired and reset counter if needed

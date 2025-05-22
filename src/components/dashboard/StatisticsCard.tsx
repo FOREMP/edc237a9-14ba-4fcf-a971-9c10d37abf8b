@@ -8,7 +8,7 @@ const StatisticsCard = () => {
   const navigate = useNavigate();
   const { features } = useSubscriptionStatus();
 
-  // FIXED: Only show for Standard or Premium plans (not basic)
+  // Only show for Standard or Premium plans (not basic or free)
   if (!features.hasJobViewStats && !features.hasAdvancedStats) {
     return null;
   }

@@ -84,7 +84,7 @@ serve(async (req) => {
     // First, check if the user has a Stripe customer ID
     let { data: existingSubscriber } = await supabase
       .from("subscribers")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, subscription_tier")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -162,7 +162,7 @@ serve(async (req) => {
         // Get the product to determine the tier
         const product = await stripe.products.retrieve(productId.toString());
         
-        // FIXED: Determine tier from product metadata or name more accurately
+        // Determine tier from product metadata or name more accurately
         if (product.metadata && product.metadata.tier) {
           subscriptionTier = product.metadata.tier.toLowerCase();
         } else {
@@ -209,7 +209,7 @@ serve(async (req) => {
       }
     }
 
-    // Update database with subscription status
+    // Update database with subscription status - always use onConflict: "user_id" to ensure proper updating
     const updateResult = await supabase.from("subscribers").upsert({
       user_id: user.id,
       email: user.email,
