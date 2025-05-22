@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { User, UserPreferences } from "@/types";
 import { authService } from "@/services/auth";
 import { toast } from "sonner";
@@ -15,8 +15,12 @@ export const useAuth = () => {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
-  const [lastAuthCheck, setLastAuthCheck] = useState<number>(0);
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  
+  // Use refs to track last auth check time to prevent rapid re-authentication
+  const lastAuthCheckRef = useRef<number>(0);
+  const minAuthCheckInterval = 1000; // Minimum time between auth checks in ms
+  const authOperationInProgress = useRef<boolean>(false);
 
   // Load user preferences
   const loadUserPreferences = async () => {
@@ -25,16 +29,17 @@ export const useAuth = () => {
       return;
     }
     
-    setPreferencesLoading(true);
-    try {
-      const prefs = await authService.getUserPreferences();
-      if (prefs) {
-        setPreferences(prefs);
+    if (preferencesLoading) {
+      try {
+        const prefs = await authService.getUserPreferences();
+        if (prefs) {
+          setPreferences(prefs);
+        }
+      } catch (error) {
+        console.error("Error loading user preferences:", error);
+      } finally {
+        setPreferencesLoading(false);
       }
-    } catch (error) {
-      console.error("Error loading user preferences:", error);
-    } finally {
-      setPreferencesLoading(false);
     }
   };
 
@@ -67,7 +72,6 @@ export const useAuth = () => {
       // First check if email is in admin list - fastest check
       const isSpecialAdmin = isAdminEmail(currentUser.email);
       if (isSpecialAdmin) {
-        console.log("Admin status granted via special email list:", currentUser.email);
         return true;
       }
 
@@ -83,14 +87,6 @@ export const useAuth = () => {
       
       // Check both role and email in database
       const isDbAdmin = (dbRole === 'admin') || (dbEmail && isAdminEmail(dbEmail));
-      
-      console.log("Admin status check complete:", {
-        email: currentUser.email,
-        dbEmail,
-        dbRole,
-        isAdmin: isDbAdmin || isSpecialAdmin,
-        isSpecialAdmin
-      });
       
       return isDbAdmin || isSpecialAdmin;
     } catch (error) {
@@ -123,127 +119,128 @@ export const useAuth = () => {
     setIsAdmin(isSpecialAdmin || userData.role === 'admin');
     setIsCompany(userData.role === 'company' && !isSpecialAdmin);
     
-    // Then do complete admin check against database
-    const isUserAdmin = await performAdminCheck(userData);
-    
-    // Update admin status based on complete check
-    setIsAdmin(isUserAdmin);
-    setIsCompany(userData.role === 'company' && !isUserAdmin);
-    
-    // Update user object if needed
-    if (isUserAdmin && userData.role !== 'admin') {
-      setUser({
-        ...userData,
-        role: 'admin' // Ensure user object reflects admin role
-      });
+    // Then do complete admin check against database - but only if needed
+    if (!isSpecialAdmin && userData.role !== 'admin') {
+      const isUserAdmin = await performAdminCheck(userData);
+      
+      // Update admin status based on complete check
+      setIsAdmin(isUserAdmin);
+      setIsCompany(userData.role === 'company' && !isUserAdmin);
+      
+      // Update user object if needed
+      if (isUserAdmin && userData.role !== 'admin') {
+        setUser({
+          ...userData,
+          role: 'admin' // Ensure user object reflects admin role
+        });
+      }
     }
     
     setAdminCheckComplete(true);
-    
-    console.log("User state set with admin status:", {
-      email: userData.email,
-      role: isUserAdmin ? 'admin' : userData.role,
-      isAdmin: isUserAdmin,
-      isCompany: userData.role === 'company' && !isUserAdmin
-    });
   }, [performAdminCheck]);
 
-  // This function handles auth state changes more robustly
+  // Handle auth state changes with rate limiting
   const handleAuthChange = useCallback(async (event, session) => {
-    console.log("Auth state changed:", event, session?.user?.email);
-    
+    // Skip if another auth operation is in progress or if we've checked recently
     const now = Date.now();
-    // Deduplicate rapid auth change events
-    if (now - lastAuthCheck < 500) {
-      console.log("Skipping rapid auth change event");
+    if (authOperationInProgress.current || (now - lastAuthCheckRef.current < minAuthCheckInterval)) {
       return;
     }
     
-    setLastAuthCheck(now);
+    lastAuthCheckRef.current = now;
+    authOperationInProgress.current = true;
+    
+    try {
+      if (session) {
+        // Use setTimeout to defer the profile fetch to avoid potential deadlocks
+        setTimeout(async () => {
+          try {
+            // Only refresh session if we don't have active user data
+            if (!isAuthenticated || !user) {
+              await authService.refreshSession(); // This will also fetch user profile
+              const currentUser = authService.getCurrentUser();
+              
+              if (currentUser) {
+                setIsAuthenticated(true);
+                await setUserWithAdminCheck(currentUser);
+              } else {
+                // No user data returned
+                setIsAuthenticated(false);
+                setUser(null);
+                setIsAdmin(false);
+                setIsCompany(false);
+                setAdminCheckComplete(true);
+              }
+            }
+          } catch (error) {
+            console.error("Error refreshing session:", error);
+          } finally {
+            setIsLoading(false);
+            authOperationInProgress.current = false;
+          }
+        }, 0);
+      } else {
+        // Only clear auth state completely on explicit SIGNED_OUT event
+        if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          setUser(null);
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+          setIsCompany(false);
+          setAdminCheckComplete(true);
+        }
+        setIsLoading(false);
+        authOperationInProgress.current = false;
+      }
+    } catch (error) {
+      console.error("Error handling auth change:", error);
+      authOperationInProgress.current = false;
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, user, setUserWithAdminCheck]);
 
-    if (session) {
-      // Use setTimeout to defer the profile fetch to avoid potential deadlocks
-      setTimeout(async () => {
-        try {
-          // Only refresh session if we don't have active user data
-          if (!isAuthenticated || !user) {
-            await authService.refreshSession(); // This will also fetch user profile
+  // Initial auth setup
+  useEffect(() => {
+    // Skip if we've already initialized
+    if (authInitialized) return;
+    
+    let mounted = true;
+    setIsLoading(true);
+    setAdminCheckComplete(false);
+    
+    // Setup auth listener first before checking current session
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (mounted) {
+        handleAuthChange(event, session);
+      }
+    });
+    
+    // Check current session state
+    const initializeAuth = async () => {
+      authOperationInProgress.current = true;
+      try {
+        const sessionResult = await supabase.auth.getSession();
+        
+        if (sessionResult?.data?.session) {
+          try {
+            await authService.refreshSession(); // This refreshes the session and fetches user profile
             const currentUser = authService.getCurrentUser();
+            const authState = authService.isUserAuthenticated();
             
-            if (currentUser) {
+            // If user is logged in, set authentication state and user data
+            if (currentUser && authState) {
               setIsAuthenticated(true);
               await setUserWithAdminCheck(currentUser);
             } else {
-              // No user data returned
+              // No authenticated user
               setIsAuthenticated(false);
               setUser(null);
               setIsAdmin(false);
               setIsCompany(false);
               setAdminCheckComplete(true);
             }
-          }
-        } catch (error) {
-          console.error("Error refreshing session:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }, 0);
-    } else {
-      // Only clear auth state completely on explicit SIGNED_OUT event
-      // or if the event indicates a clear auth state change
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsAdmin(false);
-        setIsCompany(false);
-        setIsLoading(false);
-        setAdminCheckComplete(true);
-      }
-    }
-  }, [setUserWithAdminCheck, lastAuthCheck, isAuthenticated, user]);
-
-  useEffect(() => {
-    // Skip if we've already initialized
-    if (authInitialized) return;
-    
-    let mounted = true;
-    
-    console.log("Setting up auth listener");
-    
-    // Set loading state immediately
-    setIsLoading(true);
-    setAdminCheckComplete(false);
-    
-    // Setup auth listener first before checking current session
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthChange);
-    
-    // Check current session state
-    const initializeAuth = async () => {
-      try {
-        const sessionBefore = await supabase.auth.getSession();
-        console.log("Initial session check:", sessionBefore?.data?.session?.user?.email);
-        
-        if (sessionBefore?.data?.session) {
-          await authService.refreshSession(); // This refreshes the session and fetches user profile
-          const currentUser = authService.getCurrentUser();
-          const authState = authService.isUserAuthenticated();
-          
-          console.log("Auth initialized:", {
-            hasUser: !!currentUser,
-            authState,
-            email: currentUser?.email
-          });
-          
-          // If user is logged in, set authentication state and user data
-          if (currentUser && authState) {
-            setIsAuthenticated(true);
-            await setUserWithAdminCheck(currentUser);
-          } else {
-            // No authenticated user
+          } catch (error) {
+            console.error("Error refreshing session:", error);
             setIsAuthenticated(false);
-            setUser(null);
-            setIsAdmin(false);
-            setIsCompany(false);
             setAdminCheckComplete(true);
           }
         } else {
@@ -262,6 +259,7 @@ export const useAuth = () => {
       } finally {
         if (mounted) {
           setIsLoading(false);
+          authOperationInProgress.current = false;
         }
       }
     };

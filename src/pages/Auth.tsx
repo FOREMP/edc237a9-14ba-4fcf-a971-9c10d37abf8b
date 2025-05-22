@@ -43,7 +43,10 @@ const Auth = () => {
         } else if (data?.session) {
           console.log("Successfully authenticated from redirect");
           toast.success("Inloggning lyckades!");
-          navigate(from, { replace: true });
+          // Use a short timeout to ensure state is properly updated
+          setTimeout(() => {
+            navigate(from, { replace: true });
+          }, 100);
         }
       });
     }

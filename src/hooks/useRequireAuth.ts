@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "./useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,6 +12,8 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sessionRefreshed, setSessionRefreshed] = useState(false);
+  const lastAuthCheckRef = useRef<number>(0);
+  const checkingRef = useRef<boolean>(false);
 
   // More robust admin check with backup email verification
   const verifyAdminStatus = useCallback(async () => {
@@ -27,10 +29,16 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
       return true;
     }
     
+    // Prevent excessive verification attempts
+    const now = Date.now();
+    if (now - lastAuthCheckRef.current < 2000 || checkingRef.current) {
+      return auth.isAdmin;
+    }
+    
+    lastAuthCheckRef.current = now;
+    checkingRef.current = true;
+    
     try {
-      // Force a session refresh to ensure we have the latest token
-      await supabase.auth.refreshSession();
-      
       // Then try database check as backup
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -44,9 +52,11 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         // Final check - fall back to email verification as absolute backstop
         if (auth.user.email && isAdminEmail(auth.user.email)) {
           console.log("Admin access granted via email fallback:", auth.user.email);
+          checkingRef.current = false;
           return true;
         }
         
+        checkingRef.current = false;
         return false;
       }
       
@@ -54,18 +64,12 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
       const isAdminRole = profileData?.role === 'admin';
       const isAdminByDbEmail = profileData?.email && isAdminEmail(profileData.email);
       
-      console.log("Admin DB verification result:", {
-        email: auth.user.email,
-        dbEmail: profileData?.email,
-        dbRole: profileData?.role,
-        isAdminRole,
-        isAdminByDbEmail
-      });
-      
+      checkingRef.current = false;
       return isAdminRole || isAdminByDbEmail;
     } catch (err) {
       console.error("Error in admin status verification:", err);
       
+      checkingRef.current = false;
       // Final fallback - if all else fails, just check the email
       return !!(auth.user.email && isAdminEmail(auth.user.email));
     }
@@ -137,15 +141,17 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
 
   // Enhanced debug logging
   useEffect(() => {
-    console.log("useRequireAuth state:", {
-      isCheckingAuth,
-      hasAdminAccess,
-      authUser: auth.user,
-      email: auth.user?.email,
-      isAdminByEmail: auth.user?.email ? isAdminEmail(auth.user.email) : false,
-      isAdminByRole: auth.user?.role === 'admin',
-      isAdminFromAuthHook: auth.isAdmin
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log("useRequireAuth state:", {
+        isCheckingAuth,
+        hasAdminAccess,
+        authUser: auth.user,
+        email: auth.user?.email,
+        isAdminByEmail: auth.user?.email ? isAdminEmail(auth.user.email) : false,
+        isAdminByRole: auth.user?.role === 'admin',
+        isAdminFromAuthHook: auth.isAdmin
+      });
+    }
   }, [isCheckingAuth, hasAdminAccess, auth.user, auth.isAdmin]);
 
   return { 

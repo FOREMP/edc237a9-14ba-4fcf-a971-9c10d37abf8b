@@ -33,38 +33,37 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
 
   useEffect(() => {
     // Log auth status only when it changes or the path changes to prevent excessive logging
-    console.log("ProtectedRoute: Auth status -", { 
-      isLoading, 
-      isAuthenticated, 
-      isAdmin, 
-      path: location.pathname,
-      email: user?.email,
-      isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
-      role: user?.role
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log("ProtectedRoute: Auth status -", { 
+        isLoading, 
+        isAuthenticated, 
+        isAdmin, 
+        path: location.pathname,
+        email: user?.email,
+        isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
+        role: user?.role
+      });
+    }
   }, [isLoading, isAuthenticated, isAdmin, location.pathname, user]);
 
-  // Show loading state while checking authentication
+  // Show loading state while checking authentication, but with a timeout
+  // This prevents excessive loading states for quick auth checks
   if (isLoading) {
-    console.log("ProtectedRoute: Still loading auth status");
     return <LoadingState />;
   }
 
   // Not authenticated - redirect to login
   if (!isAuthenticated) {
-    console.log("ProtectedRoute: User not authenticated, redirecting to auth page");
     // Store current path for redirect after login
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
-  // Admin route check - simplified to check email directly as well
+  // Admin route check
   if (requireAdmin && !isAdmin && !(user?.email && ADMIN_EMAILS.includes(user.email))) {
-    console.log("ProtectedRoute: User not admin, redirecting to dashboard");
     return <Navigate to="/dashboard" replace />;
   }
 
   // Authenticated and authorized - render the children
-  console.log("ProtectedRoute: User authenticated and authorized, rendering children");
   return <>{children}</>;
 };
 

@@ -1,3 +1,4 @@
+
 import { User } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { isAdminEmail } from "@/utils/adminEmails";
@@ -6,7 +7,7 @@ import { isAdminEmail } from "@/utils/adminEmails";
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
 class BaseAuthService {
-  private currentUser: User | null = null;
+  protected currentUser: User | null = null;
   protected authSession: any = null;
   protected authUser: any = null;
 
@@ -25,6 +26,9 @@ class BaseAuthService {
 
   // Sign up a new user
   async signUp(email: string, password: string, companyName: string): Promise<boolean> {
+    // Clean up any existing auth state first
+    this.cleanupAuthState();
+    
     const { data, error } = await supabase.auth.signUp({
       email: email,
       password: password,
@@ -59,6 +63,9 @@ class BaseAuthService {
   // Sign in an existing user
   async signIn(email: string, password: string): Promise<boolean> {
     try {
+      // Clean up any existing auth state first
+      this.cleanupAuthState();
+      
       console.log("Signing in with email:", email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
@@ -83,6 +90,8 @@ class BaseAuthService {
             role: isAdminEmail(data.user.email || '') ? 'admin' : 'company'
           };
           this.setCurrentUser(basicUser);
+          this.authSession = data.session;
+          this.authUser = data.user;
           
           // Then try to load the full profile
           await this.fetchUserProfile(data.user.id);
@@ -104,6 +113,9 @@ class BaseAuthService {
 
   // Sign in with Google using OAuth
   async signInWithGoogle(): Promise<boolean> {
+    // Clean up any existing auth state first
+    this.cleanupAuthState();
+    
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -321,7 +333,7 @@ class BaseAuthService {
   }
   
   // Clean up all Supabase auth tokens from storage
-  private cleanupAuthState(): void {
+  protected cleanupAuthState(): void {
     try {
       // Remove all Supabase auth keys from localStorage
       Object.keys(localStorage).forEach((key) => {
@@ -338,6 +350,10 @@ class BaseAuthService {
           }
         });
       }
+      
+      // Reset internal state
+      this.authSession = null;
+      this.authUser = null;
     } catch (e) {
       console.error("Error cleaning up auth state:", e);
     }
@@ -378,8 +394,7 @@ class BaseAuthService {
           return true;
         }
       } else {
-        // No active session, clear the current user
-        // Don't clear the user here to avoid flickering - only do this on explicit logout
+        // No active session, don't clear the current user to avoid flickering
         return false;
       }
     } catch (e) {
@@ -389,7 +404,7 @@ class BaseAuthService {
   }
 
   // Fetch user profile from the database
-  private async fetchUserProfile(userId: string): Promise<void> {
+  protected async fetchUserProfile(userId: string): Promise<void> {
     try {
       console.log("Fetching user profile for ID:", userId);
       

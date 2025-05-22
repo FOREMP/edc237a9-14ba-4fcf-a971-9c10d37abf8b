@@ -8,6 +8,26 @@ import { LogOut, Menu, Settings, Shield, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { authService } from "@/services/auth";
+import { supabase } from "@/integrations/supabase/client";
+
+// Helper function to clean up auth state
+const cleanupAuthState = () => {
+  // Remove all Supabase auth keys from localStorage
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith('supabase.auth.') || key.includes('sb-') || key === 'currentUser') {
+      localStorage.removeItem(key);
+    }
+  });
+  
+  // Remove from sessionStorage if in use
+  if (typeof sessionStorage !== 'undefined') {
+    Object.keys(sessionStorage).forEach((key) => {
+      if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+};
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -21,12 +41,30 @@ const Navbar = () => {
     
     try {
       setIsLoggingOut(true);
+      
+      // Clean up auth state first to prevent issues
+      cleanupAuthState();
+      
+      // Try to perform a global sign out
+      try {
+        await supabase.auth.signOut({ scope: 'global' });
+      } catch (signOutError) {
+        console.error("Error during Supabase signOut:", signOutError);
+      }
+      
+      // Call our service logout method as a backup
       await authService.logout();
+      
       toast.success("Du har loggat ut");
-      navigate("/");
+      
+      // Force refresh for clean state
+      window.location.href = "/";
     } catch (error) {
       console.error("Error logging out:", error);
       toast.error("Det gick inte att logga ut");
+      
+      // Last resort - force reload the page
+      window.location.reload();
     } finally {
       setIsLoggingOut(false);
     }

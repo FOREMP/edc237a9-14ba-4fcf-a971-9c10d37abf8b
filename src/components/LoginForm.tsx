@@ -15,6 +15,24 @@ interface LoginFormProps {
   returnPath?: string;
 }
 
+const cleanupAuthState = () => {
+  // Remove all Supabase auth keys from localStorage
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+      localStorage.removeItem(key);
+    }
+  });
+  
+  // Remove from sessionStorage if in use
+  if (typeof sessionStorage !== 'undefined') {
+    Object.keys(sessionStorage).forEach((key) => {
+      if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+};
+
 const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -32,6 +50,9 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
     
     setIsLoading(true);
     try {
+      // Clean up existing auth state before logging in to prevent conflicts
+      cleanupAuthState();
+      
       console.log("Logging in with email:", email);
       const result = await authService.loginWithEmail(email, password);
       
@@ -39,7 +60,11 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
         console.log("Login successful, user:", result.user);
         toast.success("Inloggad som " + (result.user?.companyName || email));
         console.log("Login successful, navigating to:", returnPath);
-        navigate(returnPath);
+        
+        // Add a small delay to ensure auth context is updated
+        setTimeout(() => {
+          navigate(returnPath, { replace: true });
+        }, 100);
       } else {
         console.error("Login failed:", result.error);
         toast.error(result.error || "Inloggning misslyckades");
@@ -62,6 +87,9 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
     
     setIsLoading(true);
     try {
+      // Clean up existing auth state before registration to prevent conflicts
+      cleanupAuthState();
+      
       console.log("Registering with email:", email);
       const result = await authService.registerWithEmail(email, password, companyName);
       
@@ -74,7 +102,11 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
           console.log("Registration successful, user:", result.user);
           toast.success("Registrering lyckades! Du är nu inloggad");
           console.log("Registration successful, navigating to:", returnPath);
-          navigate(returnPath);
+          
+          // Add a small delay to ensure auth context is updated
+          setTimeout(() => {
+            navigate(returnPath, { replace: true });
+          }, 100);
         }
       } else {
         console.error("Registration failed:", result.error);

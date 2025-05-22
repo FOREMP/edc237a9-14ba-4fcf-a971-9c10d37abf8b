@@ -38,11 +38,11 @@ export const useSubscriptionFeatures = () => {
     expiresAt: null
   });
 
-  const refreshSubscription = useCallback((forceRefresh = false) => {
+  const refreshSubscription = useCallback((shouldForceRefresh = false) => {
     const now = Date.now();
     
     // More aggressive throttling to reduce API calls
-    if (!forceRefresh) {
+    if (!shouldForceRefresh) {
       // Increase basic throttling - prevent multiple refreshes within 1000ms (1 second)
       if (now - lastRefreshTime < 1000) {
         console.log("Throttling rapid subscription refresh attempts");
@@ -168,10 +168,7 @@ export const useSubscriptionFeatures = () => {
           console.error('Error fetching refreshed subscriber data:', refreshError);
         } else if (refreshedData) {
           console.log("Refreshed subscriber data:", refreshedData);
-        }
-        
-        // Use the refreshed data if available
-        if (refreshedData) {
+          // Use the refreshed data if available
           subscriberData = refreshedData;
         }
       }
