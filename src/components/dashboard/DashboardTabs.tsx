@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CompanyProfile from "@/components/CompanyProfile";
 import JobList from "@/components/dashboard/JobList";
 import { Job } from "@/types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface DashboardTabsProps {
   activeTab: string;
@@ -23,16 +24,20 @@ const DashboardTabs = ({
   handleDeleteClick,
   onCreateClick
 }: DashboardTabsProps) => {
+  const isMobile = useIsMobile();
+
   return (
     <Tabs defaultValue={activeTab} value={activeTab} onValueChange={setActiveTab}>
-      <TabsList className="mb-6">
-        <TabsTrigger value="company">Ditt företag</TabsTrigger>
-        <TabsTrigger value="all">Alla jobb</TabsTrigger>
-        <TabsTrigger value="pending">Under granskning</TabsTrigger>
-        <TabsTrigger value="approved">Godkända</TabsTrigger>
-        <TabsTrigger value="rejected">Nekade</TabsTrigger>
-        <TabsTrigger value="expired">Utgångna</TabsTrigger>
-      </TabsList>
+      <div className="px-2 max-w-full overflow-x-auto">
+        <TabsList className="mb-6 w-full justify-start">
+          <TabsTrigger value="company" className={isMobile ? "text-xs" : ""}>Ditt företag</TabsTrigger>
+          <TabsTrigger value="all" className={isMobile ? "text-xs" : ""}>Alla jobb</TabsTrigger>
+          <TabsTrigger value="pending" className={isMobile ? "text-xs" : ""}>Under granskning</TabsTrigger>
+          <TabsTrigger value="approved" className={isMobile ? "text-xs" : ""}>Godkända</TabsTrigger>
+          <TabsTrigger value="rejected" className={isMobile ? "text-xs" : ""}>Nekade</TabsTrigger>
+          <TabsTrigger value="expired" className={isMobile ? "text-xs" : ""}>Utgångna</TabsTrigger>
+        </TabsList>
+      </div>
       
       <TabsContent value="company">
         <CompanyProfile />
