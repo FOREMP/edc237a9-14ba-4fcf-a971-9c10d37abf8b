@@ -12,7 +12,7 @@ export const useSubscriptionStatus = () => {
   const [hasProcessedUpdate, setHasProcessedUpdate] = useState(false);
   const lastProcessedTimestamp = useRef<string | null>(null);
   const refreshAttempts = useRef<number>(0);
-  const maxRefreshAttempts = 10; // Increased from 5 to 10 for better reliability
+  const maxRefreshAttempts = 10; // Increased for better reliability
 
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
@@ -59,11 +59,14 @@ export const useSubscriptionStatus = () => {
       // Immediate refresh with force parameter to ensure backend data refresh
       refreshSubscription(true);
       
-      // Schedule multiple refresh attempts with increasing delays but shorter initial delay
+      // Schedule multiple refresh attempts with shorter initial delays for faster updates
       const scheduleNextRefresh = () => {
         if (refreshAttempts.current < maxRefreshAttempts) {
-          // Exponential backoff starting with 250ms instead of 500ms
-          const delay = Math.pow(1.8, refreshAttempts.current) * 250; 
+          // Optimized delay pattern: start with very quick checks, then increase the interval
+          const delay = refreshAttempts.current < 3 
+            ? 200 // First few checks very quick (200ms)
+            : Math.pow(1.5, refreshAttempts.current - 3) * 300; // Then use exponential backoff
+          
           console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1}/${maxRefreshAttempts} after ${delay}ms`);
           
           refreshTimeoutRef.current = window.setTimeout(() => {
@@ -91,7 +94,7 @@ export const useSubscriptionStatus = () => {
                 duration: 8000
               });
             }
-          }, 1000);
+          }, 800); // Shorter delay for final status message
         }
       };
       
@@ -130,8 +133,9 @@ export const useSubscriptionStatus = () => {
       // Immediate refresh to get the latest data with force parameter
       refreshSubscription(true);
       
-      // Schedule multiple refresh attempts with increasing delays and frequency
-      const refreshDelays = [250, 500, 1000, 2000, 3500, 5000, 8000]; // More frequent early checks
+      // More aggressive refresh pattern for faster updates
+      // Quick initial checks, then gradually increase interval
+      const refreshDelays = [150, 300, 600, 1000, 2000, 3500, 5000]; 
       
       refreshDelays.forEach((delay, index) => {
         setTimeout(() => {
@@ -160,8 +164,7 @@ export const useSubscriptionStatus = () => {
     };
   }, [window.location.pathname]);
 
-  // Add a periodic refresh to ensure subscription status is up-to-date
-  // This helps catch any changes made outside the app's direct flow
+  // Periodic refresh for updated subscription status
   useEffect(() => {
     // Don't do periodic refresh during specific update operations
     if (hasProcessedPayment || hasProcessedUpdate) return;
@@ -169,7 +172,7 @@ export const useSubscriptionStatus = () => {
     const intervalId = window.setInterval(() => {
       console.log("Running periodic subscription refresh check");
       refreshSubscription();
-    }, 30000); // Check every 30 seconds
+    }, 30000); // Check every 30 seconds during normal operation
     
     return () => {
       window.clearInterval(intervalId);

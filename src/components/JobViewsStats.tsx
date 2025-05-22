@@ -14,7 +14,7 @@ const JobViewsStats = ({ jobId }: JobViewsStatsProps) => {
   const { features } = useSubscriptionStatus();
   const { impressions, detailViews, isLoading, error } = useJobViewsStats(jobId);
   
-  // Only show stats for Standard and Premium plans
+  // FIXED: Only show stats for Standard and Premium plans (not Basic)
   if (!features.hasJobViewStats && !features.hasAdvancedStats) {
     return null;
   }

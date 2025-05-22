@@ -4,6 +4,11 @@ import Stripe from "https://esm.sh/stripe@12.18.0?target=deno";
 import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
+// Cache subscriptions in memory to improve response time for frequent checks
+// This will be reset when the function cold starts
+const subscriptionCache = new Map();
+const CACHE_TTL = 20000; // 20 seconds cache TTL
+
 serve(async (req) => {
   // Handle CORS preflight request
   if (req.method === "OPTIONS") {
@@ -56,6 +61,20 @@ serve(async (req) => {
     }
 
     console.log("Checking subscription status for user:", user.id, user.email);
+    
+    // Check if we have a valid cached result
+    const cacheKey = `${user.id}`;
+    const cachedData = subscriptionCache.get(cacheKey);
+    const requestBody = await req.json().catch(() => ({}));
+    const forceFresh = requestBody.force_fresh === true;
+    
+    if (cachedData && !forceFresh && (Date.now() - cachedData.timestamp) < CACHE_TTL) {
+      console.log("Returning cached subscription data");
+      return new Response(JSON.stringify(cachedData.data), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
@@ -95,10 +114,18 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }, { onConflict: "user_id" });
         
-        return new Response(JSON.stringify({ 
+        const resultData = { 
           subscribed: false,
           subscription_tier: "free"
-        }), {
+        };
+        
+        // Cache the result
+        subscriptionCache.set(cacheKey, {
+          data: resultData,
+          timestamp: Date.now()
+        });
+        
+        return new Response(JSON.stringify(resultData), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -135,13 +162,13 @@ serve(async (req) => {
         // Get the product to determine the tier
         const product = await stripe.products.retrieve(productId.toString());
         
-        // Determine tier from product metadata or name
+        // FIXED: Determine tier from product metadata or name more accurately
         if (product.metadata && product.metadata.tier) {
-          subscriptionTier = product.metadata.tier;
+          subscriptionTier = product.metadata.tier.toLowerCase();
         } else {
           // Fall back to determine by product name
           const productName = product.name.toLowerCase();
-          if (productName.includes('basic')) {
+          if (productName.includes('basic') || productName.includes('bas')) {
             subscriptionTier = 'basic';
           } else if (productName.includes('standard')) {
             subscriptionTier = 'standard';
@@ -222,11 +249,19 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({
+    const resultData = {
       subscribed: isSubscribed,
       subscription_tier: subscriptionTier,
       subscription_end: subscriptionEnd,
-    }), {
+    };
+    
+    // Cache the result
+    subscriptionCache.set(cacheKey, {
+      data: resultData,
+      timestamp: Date.now()
+    });
+
+    return new Response(JSON.stringify(resultData), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

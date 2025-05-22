@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -297,17 +298,17 @@ export const useSubscriptionFeatures = () => {
       }
 
       // Determine features based on subscription tier
-      // Each tier includes features from lower tiers
+      // FIXED: Properly assign features according to the correct tier specifications
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
         expiresAt,
         monthlyPostLimit,
         monthlyPostsUsed,
-        // Basic tier has NO stats - only standard and premium
-        hasBasicStats: false,  // No longer used
-        // Standard and Premium tiers have job view statistics
-        hasJobViewStats: ['standard', 'premium'].includes(tier) && isActive,
+        // Basic tier has NO stats
+        hasBasicStats: false,
+        // FIXED: Standard and Premium tiers have job view statistics
+        hasJobViewStats: (tier === 'standard' || tier === 'premium') && isActive,
         // Only Premium tier has advanced stats
         hasAdvancedStats: tier === 'premium' && isActive,
         // Only Premium can boost posts
@@ -327,9 +328,9 @@ export const useSubscriptionFeatures = () => {
 
       console.log("Setting updated features:", updatedFeatures);
       setFeatures(updatedFeatures);
+      setLoading(false); // Set loading to false as soon as we have data
     } catch (error) {
       console.error('Error in useSubscriptionFeatures:', error);
-    } finally {
       setLoading(false);
     }
   }, [user?.id, lastQueryTime]);
