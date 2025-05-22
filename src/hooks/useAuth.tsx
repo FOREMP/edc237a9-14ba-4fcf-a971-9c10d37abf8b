@@ -15,6 +15,7 @@ export const useAuth = () => {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
+  const [lastAuthCheck, setLastAuthCheck] = useState<number>(0);
 
   // Load user preferences
   const loadUserPreferences = async () => {
@@ -146,6 +147,57 @@ export const useAuth = () => {
     });
   }, [performAdminCheck]);
 
+  // This function handles auth state changes more robustly
+  const handleAuthChange = useCallback(async (event, session) => {
+    console.log("Auth state changed:", event, session?.user?.email);
+    
+    const now = Date.now();
+    // Deduplicate rapid auth change events
+    if (now - lastAuthCheck < 300) {
+      console.log("Skipping rapid auth change event");
+      return;
+    }
+    
+    setLastAuthCheck(now);
+
+    if (session) {
+      // Use setTimeout to defer the profile fetch to avoid potential deadlocks
+      setTimeout(async () => {
+        try {
+          await authService.refreshSession(); // This will also fetch user profile
+          const currentUser = authService.getCurrentUser();
+          
+          if (currentUser) {
+            setIsAuthenticated(true);
+            await setUserWithAdminCheck(currentUser);
+          } else {
+            // No user data returned
+            setIsAuthenticated(false);
+            setUser(null);
+            setIsAdmin(false);
+            setIsCompany(false);
+            setAdminCheckComplete(true);
+          }
+        } catch (error) {
+          console.error("Error refreshing session:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 0);
+    } else {
+      // Only clear auth state completely on explicit SIGNED_OUT event
+      // or if the event indicates a clear auth state change
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        setUser(null);
+        setIsAuthenticated(false);
+        setIsAdmin(false);
+        setIsCompany(false);
+        setIsLoading(false);
+        setAdminCheckComplete(true);
+      }
+    }
+  }, [setUserWithAdminCheck, lastAuthCheck]);
+
   useEffect(() => {
     let mounted = true;
     
@@ -156,48 +208,7 @@ export const useAuth = () => {
     setAdminCheckComplete(false);
     
     // Setup auth listener first before checking current session
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      
-      console.log("Auth state changed:", event, session?.user?.email);
-
-      if (session) {
-        // Use setTimeout to defer the profile fetch to avoid potential deadlocks
-        setTimeout(async () => {
-          if (!mounted) return;
-          
-          try {
-            await authService.refreshSession(); // This will also fetch user profile
-            const currentUser = authService.getCurrentUser();
-            
-            if (currentUser) {
-              setIsAuthenticated(true);
-              await setUserWithAdminCheck(currentUser);
-            } else {
-              // No user data returned
-              setIsAuthenticated(false);
-              setUser(null);
-              setIsAdmin(false);
-              setIsCompany(false);
-              setAdminCheckComplete(true);
-            }
-          } catch (error) {
-            console.error("Error refreshing session:", error);
-            setIsLoading(false);
-            setAdminCheckComplete(true);
-          } finally {
-            if (mounted) setIsLoading(false);
-          }
-        }, 0);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsAdmin(false);
-        setIsCompany(false);
-        setIsLoading(false);
-        setAdminCheckComplete(true);
-      }
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthChange);
     
     // Check current session state
     const initializeAuth = async () => {
@@ -205,22 +216,31 @@ export const useAuth = () => {
         const sessionBefore = await supabase.auth.getSession();
         console.log("Initial session check:", sessionBefore?.data?.session?.user?.email);
         
-        await authService.refreshSession(); // This refreshes the session and fetches user profile
-        const currentUser = authService.getCurrentUser();
-        const authState = authService.isUserAuthenticated();
-        
-        console.log("Auth initialized:", {
-          hasUser: !!currentUser,
-          authState,
-          email: currentUser?.email
-        });
-        
-        // If user is logged in, set authentication state and user data
-        if (currentUser && authState) {
-          setIsAuthenticated(true);
-          await setUserWithAdminCheck(currentUser);
+        if (sessionBefore?.data?.session) {
+          await authService.refreshSession(); // This refreshes the session and fetches user profile
+          const currentUser = authService.getCurrentUser();
+          const authState = authService.isUserAuthenticated();
+          
+          console.log("Auth initialized:", {
+            hasUser: !!currentUser,
+            authState,
+            email: currentUser?.email
+          });
+          
+          // If user is logged in, set authentication state and user data
+          if (currentUser && authState) {
+            setIsAuthenticated(true);
+            await setUserWithAdminCheck(currentUser);
+          } else {
+            // No authenticated user
+            setIsAuthenticated(false);
+            setUser(null);
+            setIsAdmin(false);
+            setIsCompany(false);
+            setAdminCheckComplete(true);
+          }
         } else {
-          // No authenticated user
+          // No session found
           setIsAuthenticated(false);
           setUser(null);
           setIsAdmin(false);
@@ -243,7 +263,7 @@ export const useAuth = () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [setUserWithAdminCheck]);
+  }, [setUserWithAdminCheck, handleAuthChange]);
 
   // Load preferences when auth status changes
   useEffect(() => {

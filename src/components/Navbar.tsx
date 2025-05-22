@@ -11,13 +11,25 @@ import { authService } from "@/services/auth";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { user, isAuthenticated, isAdmin } = useAuth();
   const navigate = useNavigate();
   
   const handleLogout = async () => {
-    await authService.logout();
-    toast.success("Du har loggat ut");
-    navigate("/");
+    // Prevent multiple logout attempts
+    if (isLoggingOut) return;
+    
+    try {
+      setIsLoggingOut(true);
+      await authService.logout();
+      toast.success("Du har loggat ut");
+      navigate("/");
+    } catch (error) {
+      console.error("Error logging out:", error);
+      toast.error("Det gick inte att logga ut");
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
   
   const toggleMenu = () => {
@@ -69,10 +81,11 @@ const Navbar = () => {
                 <Button 
                   variant="outline" 
                   onClick={handleLogout}
+                  disabled={isLoggingOut}
                   className="flex items-center gap-2"
                 >
                   <LogOut size={16} />
-                  Logga ut
+                  {isLoggingOut ? "Loggar ut..." : "Logga ut"}
                 </Button>
                 
                 {user && (
@@ -163,10 +176,11 @@ const Navbar = () => {
                     handleLogout();
                     closeMenu();
                   }}
+                  disabled={isLoggingOut}
                   className="flex items-center gap-2 justify-center w-full"
                 >
                   <LogOut size={16} />
-                  Logga ut
+                  {isLoggingOut ? "Loggar ut..." : "Logga ut"}
                 </Button>
                 
                 {user && (

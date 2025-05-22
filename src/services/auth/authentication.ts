@@ -6,8 +6,10 @@ import { isAdminEmail } from "@/utils/adminEmails";
 // List of admin emails - make sure it's consistent across the app
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
-class AuthenticationService {
+class BaseAuthService {
   private currentUser: User | null = null;
+  private session: Tables["auth"]["public"]["sessions"] | null = null;
+  private user: Tables["auth"]["public"]["users"] | null = null;
 
   constructor() {
     // Initialize the current user from localStorage if available
@@ -353,6 +355,8 @@ class AuthenticationService {
       }
 
       if (session?.user) {
+        this.session = session;
+        this.user = session.user;
         try {
           await this.fetchUserProfile(session.user.id);
           return true;
@@ -493,7 +497,8 @@ class AuthenticationService {
 
   // Check if a user is currently logged in
   isUserAuthenticated(): boolean {
-    return !!this.currentUser;
+    const session = this.getCurrentSession();
+    return !!session && !!session.user;
   }
 
   // Check if the current user is an admin
@@ -516,6 +521,44 @@ class AuthenticationService {
   // Get the current Supabase session
   async getSession() {
     return await supabase.auth.getSession();
+  }
+
+  // Get the current Supabase session
+  getCurrentSession(): Tables["auth"]["public"]["sessions"] | null {
+    return this.session;
+  }
+}
+
+class AuthenticationService extends BaseAuthService {
+  // Update the isUserAuthenticated method to be more reliable
+  isUserAuthenticated(): boolean {
+    const session = this.getCurrentSession();
+    return !!session && !!session.user;
+  }
+
+  // Ensure we're not inadvertently logging out users who navigate away
+  async refreshSession(): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error('Error refreshing session:', error);
+        return false;
+      }
+      
+      if (data?.session) {
+        this.session = data.session;
+        this.user = data.session.user;
+        return true;
+      }
+      
+      // Don't reset user/session here if we don't get a session
+      // Only explicitly reset on logout
+      return false;
+    } catch (error) {
+      console.error('Exception refreshing session:', error);
+      return false;
+    }
   }
 }
 

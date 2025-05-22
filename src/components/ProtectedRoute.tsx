@@ -32,19 +32,35 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   const { isAuthenticated, isAdmin, isLoading, user } = useAuth();
   const location = useLocation();
 
-  // Additional session check
+  // Perform session check only once per component mount rather than on every render
   useEffect(() => {
+    let isMounted = true;
+    
     const verifySession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data.session) {
-        console.error("Session verification failed:", error);
-      } else {
-        console.log("Session verified successfully");
+      // Only verify if we believe we're authenticated to avoid unnecessary checks
+      if (!isAuthenticated || isLoading) return;
+      
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error || !data.session) {
+          console.error("Session verification failed:", error);
+        } else {
+          console.log("Session verified successfully");
+        }
+      } catch (err) {
+        // Only log error if component is still mounted
+        if (isMounted) {
+          console.error("Error verifying session:", err);
+        }
       }
     };
     
     verifySession();
-  }, []);
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, isLoading]);
 
   useEffect(() => {
     console.log("ProtectedRoute: Auth status -", { 

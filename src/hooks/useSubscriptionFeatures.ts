@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -41,23 +40,23 @@ export const useSubscriptionFeatures = () => {
   const refreshSubscription = useCallback((forceRefresh = false) => {
     const now = Date.now();
     
-    // Skip throttling if force refresh is requested
+    // More aggressive throttling to reduce API calls
     if (!forceRefresh) {
-      // Basic throttling - prevent multiple refreshes within 300ms
-      if (now - lastRefreshTime < 300) {
+      // Increase basic throttling - prevent multiple refreshes within 1000ms (1 second)
+      if (now - lastRefreshTime < 1000) {
         console.log("Throttling rapid subscription refresh attempts");
         return;
       }
       
-      // Track consecutive refreshes within a short time window
-      if (now - lastRefreshTime < 2000) {
+      // Track consecutive refreshes within a longer time window
+      if (now - lastRefreshTime < 5000) {
         setConsecutiveRefreshCount(prev => prev + 1);
       } else {
         setConsecutiveRefreshCount(1); // Reset if outside the window
       }
       
-      // Apply increasing delay for rapid successive refreshes to prevent hammering the API
-      const refreshDelay = Math.min(consecutiveRefreshCount * 50, 500);
+      // Apply more delay for rapid successive refreshes
+      const refreshDelay = Math.min(consecutiveRefreshCount * 100, 2000);
       
       console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
       setLastRefreshTime(now);
@@ -67,8 +66,11 @@ export const useSubscriptionFeatures = () => {
         setRefreshTrigger(prev => prev + 1);
       }, refreshDelay);
     } else {
-      // Force refresh bypasses throttling
-      console.log("Force refreshing subscription data immediately");
+      // Even force refreshes should have minimal throttling
+      if (now - lastRefreshTime < 500) {
+        return;
+      }
+      console.log("Force refreshing subscription data");
       setLastRefreshTime(now);
       setRefreshTrigger(prev => prev + 1);
     }
@@ -85,7 +87,7 @@ export const useSubscriptionFeatures = () => {
     // Set loading state if we haven't queried recently
     const now = Date.now();
     const timeSinceLastQuery = now - lastQueryTime;
-    if (timeSinceLastQuery > 1000) { // Only show loading state for "new" queries
+    if (timeSinceLastQuery > 2000) { // Only show loading state for "new" queries
       setLoading(true);
     }
     
@@ -125,9 +127,13 @@ export const useSubscriptionFeatures = () => {
       }
 
       // If no subscriber data or subscription has expired, check with Stripe edge function
-      if (!subscriberData || !subscriberData?.subscribed || 
-          (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) {
+      // Only do this check once every 30 seconds to reduce load
+      const shouldCheckWithStripe = 
+        (!subscriberData || !subscriberData?.subscribed || 
+        (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) &&
+        (now - lastRefreshTime > 30000 || forceRefresh);
         
+      if (shouldCheckWithStripe) {
         console.log("Checking subscription status via edge function");
         
         try {
@@ -165,7 +171,7 @@ export const useSubscriptionFeatures = () => {
         
         // Use the refreshed data if available
         if (refreshedData) {
-          subscriberData = refreshedData; // This works now because subscriberData is declared with 'let'
+          subscriberData = refreshedData;
         }
       }
 
@@ -206,7 +212,7 @@ export const useSubscriptionFeatures = () => {
       // Get correct monthly posts used value
       const monthlyPostsUsed = limitsData?.monthly_posts_used || 0;
 
-      // CRITICAL FIX: Correctly assign features according to tier specifications
+      // Only update features if they've actually changed to prevent unnecessary renders
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
@@ -225,29 +231,32 @@ export const useSubscriptionFeatures = () => {
         hasPrioritySupport: isActive && tier === 'premium'
       };
 
-      console.log("Setting updated features:", updatedFeatures);
-      setFeatures(updatedFeatures);
+      // Only update state if something actually changed
+      if (JSON.stringify(features) !== JSON.stringify(updatedFeatures)) {
+        console.log("Setting updated features:", updatedFeatures);
+        setFeatures(updatedFeatures);
+      }
+      
       setLoading(false);
     } catch (error) {
       console.error('Error in useSubscriptionFeatures:', error);
       setLoading(false);
     }
-  }, [user?.id, lastQueryTime]);
+  }, [user?.id, lastQueryTime, lastRefreshTime]);
 
   // Initial fetch and refresh mechanism
   useEffect(() => {
     fetchSubscriptionFeatures();
   }, [fetchSubscriptionFeatures, refreshTrigger]);
 
-  // Set up periodic refresh every 15 seconds to check for plan changes
-  // but only if the user is authenticated
+  // Set up periodic refresh every 60 seconds (increased from 15 to reduce strain)
   useEffect(() => {
     if (!user?.id) return;
     
     const intervalId = setInterval(() => {
       console.log("Running periodic subscription check");
       fetchSubscriptionFeatures();
-    }, 15000); // Check every 15 seconds
+    }, 60000); // Check every 60 seconds instead of 15
     
     return () => clearInterval(intervalId);
   }, [user?.id, fetchSubscriptionFeatures]);
