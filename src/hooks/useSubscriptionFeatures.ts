@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -98,7 +97,8 @@ export const useSubscriptionFeatures = () => {
       const cacheBuster = now.toString();
       
       // First try to get from subscribers table directly with auth session
-      const { data: subscriberData, error: subscriberError } = await supabase
+      // Using 'let' instead of 'const' since we might need to update this variable later
+      let { data: subscriberData, error: subscriberError } = await supabase
         .from('subscribers')
         .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
         .eq('user_id', user.id)
@@ -163,7 +163,7 @@ export const useSubscriptionFeatures = () => {
         
         // Use the refreshed data if available
         if (refreshedData) {
-          subscriberData = refreshedData;
+          subscriberData = refreshedData; // This works now because subscriberData is declared with 'let'
         }
       }
 
