@@ -1,6 +1,6 @@
+
 import { User } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
-import { Tables } from "@/integrations/supabase/types";
 import { isAdminEmail } from "@/utils/adminEmails";
 
 // List of admin emails - make sure it's consistent across the app
@@ -8,8 +8,8 @@ const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
 class BaseAuthService {
   private currentUser: User | null = null;
-  private session: Tables["auth"]["public"]["sessions"] | null = null;
-  private user: Tables["auth"]["public"]["users"] | null = null;
+  private authSession: any = null;
+  private authUser: any = null;
 
   constructor() {
     // Initialize the current user from localStorage if available
@@ -355,8 +355,8 @@ class BaseAuthService {
       }
 
       if (session?.user) {
-        this.session = session;
-        this.user = session.user;
+        this.authSession = session;
+        this.authUser = session.user;
         try {
           await this.fetchUserProfile(session.user.id);
           return true;
@@ -524,8 +524,8 @@ class BaseAuthService {
   }
 
   // Get the current Supabase session
-  getCurrentSession(): Tables["auth"]["public"]["sessions"] | null {
-    return this.session;
+  getCurrentSession(): any {
+    return this.authSession;
   }
 }
 
@@ -547,8 +547,8 @@ class AuthenticationService extends BaseAuthService {
       }
       
       if (data?.session) {
-        this.session = data.session;
-        this.user = data.session.user;
+        this.authSession = data.session;
+        this.authUser = data.session.user;
         return true;
       }
       

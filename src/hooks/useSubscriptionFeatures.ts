@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -242,7 +243,7 @@ export const useSubscriptionFeatures = () => {
       console.error('Error in useSubscriptionFeatures:', error);
       setLoading(false);
     }
-  }, [user?.id, lastQueryTime, lastRefreshTime]);
+  }, [user?.id, lastQueryTime, lastRefreshTime, forceRefresh, features]);
 
   // Initial fetch and refresh mechanism
   useEffect(() => {
