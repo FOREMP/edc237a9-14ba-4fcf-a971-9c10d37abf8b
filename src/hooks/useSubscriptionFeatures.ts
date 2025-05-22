@@ -132,7 +132,7 @@ export const useSubscriptionFeatures = () => {
       const shouldCheckWithStripe = 
         (!subscriberData || !subscriberData?.subscribed || 
         (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) &&
-        (now - lastRefreshTime > 30000 || forceRefresh);
+        (now - lastRefreshTime > 30000);
         
       if (shouldCheckWithStripe) {
         console.log("Checking subscription status via edge function");
@@ -243,7 +243,7 @@ export const useSubscriptionFeatures = () => {
       console.error('Error in useSubscriptionFeatures:', error);
       setLoading(false);
     }
-  }, [user?.id, lastQueryTime, lastRefreshTime, forceRefresh, features]);
+  }, [user?.id, lastQueryTime, lastRefreshTime, features]);
 
   // Initial fetch and refresh mechanism
   useEffect(() => {

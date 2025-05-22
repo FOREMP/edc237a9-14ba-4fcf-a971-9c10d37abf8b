@@ -8,8 +8,8 @@ const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
 
 class BaseAuthService {
   private currentUser: User | null = null;
-  private authSession: any = null;
-  private authUser: any = null;
+  protected authSession: any = null;
+  protected authUser: any = null;
 
   constructor() {
     // Initialize the current user from localStorage if available
