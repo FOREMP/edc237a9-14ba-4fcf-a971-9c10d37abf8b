@@ -12,7 +12,7 @@ export const useSubscriptionStatus = () => {
   const [hasProcessedUpdate, setHasProcessedUpdate] = useState(false);
   const lastProcessedTimestamp = useRef<string | null>(null);
   const refreshAttempts = useRef<number>(0);
-  const maxRefreshAttempts = 5; // Maximum number of refresh attempts
+  const maxRefreshAttempts = 10; // Increased from 5 to 10 for better reliability
 
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
@@ -38,7 +38,7 @@ export const useSubscriptionStatus = () => {
       }
       
       toast.success(`Din betalning för ${plan} har genomförts!`, {
-        description: "Dina prenumerationsuppgifter har uppdaterats.",
+        description: "Dina prenumerationsuppgifter uppdateras...",
         duration: 5000,
         id: `payment-success-${timestamp || Date.now()}` // Add timestamp to ensure unique ID
       });
@@ -56,22 +56,42 @@ export const useSubscriptionStatus = () => {
       // Reset refresh attempts counter
       refreshAttempts.current = 0;
       
-      // Immediate refresh followed by multiple delayed ones to ensure backend has updated
-      refreshSubscription();
+      // Immediate refresh with force parameter to ensure backend data refresh
+      refreshSubscription(true);
       
-      // Schedule multiple refresh attempts with increasing delays
+      // Schedule multiple refresh attempts with increasing delays but shorter initial delay
       const scheduleNextRefresh = () => {
         if (refreshAttempts.current < maxRefreshAttempts) {
-          const delay = Math.pow(2, refreshAttempts.current) * 500; // Exponential backoff
-          console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1} after ${delay}ms`);
+          // Exponential backoff starting with 250ms instead of 500ms
+          const delay = Math.pow(1.8, refreshAttempts.current) * 250; 
+          console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1}/${maxRefreshAttempts} after ${delay}ms`);
           
           refreshTimeoutRef.current = window.setTimeout(() => {
-            console.log(`Executing refresh attempt ${refreshAttempts.current + 1}`);
-            refreshSubscription();
+            console.log(`Executing refresh attempt ${refreshAttempts.current + 1}/${maxRefreshAttempts}`);
+            refreshSubscription(true); // Pass true to force a fresh fetch
             refreshAttempts.current++;
             scheduleNextRefresh();
             refreshTimeoutRef.current = null;
           }, delay);
+        } else {
+          // Final check after all attempts
+          console.log("Completed all scheduled refresh attempts. Final status check:");
+          refreshSubscription(true);
+          
+          // Show a final status message based on subscription state
+          setTimeout(() => {
+            if (features.isActive && features.tier !== 'free') {
+              toast.success("Din prenumeration är nu aktiv!", {
+                description: `Du har nu tillgång till ${features.tier} paket.`,
+                duration: 5000
+              });
+            } else {
+              toast.error("Det verkar vara problem med att aktivera din prenumeration", {
+                description: "Vänligen försök uppdatera din prenumerationsstatus eller kontakta support.",
+                duration: 8000
+              });
+            }
+          }, 1000);
         }
       };
       
@@ -88,8 +108,8 @@ export const useSubscriptionStatus = () => {
         refreshTimeoutRef.current = null;
       }
       
-      toast.success("Din prenumeration har uppdaterats!", {
-        description: "Dina nya prenumerationsuppgifter har laddats.",
+      toast.success("Din prenumeration uppdateras...", {
+        description: "Vi hämtar dina nya prenumerationsuppgifter.",
         duration: 5000,
         id: `subscription-updated-${timestamp || Date.now()}` // Add timestamp to ensure unique ID
       });
@@ -107,16 +127,16 @@ export const useSubscriptionStatus = () => {
       // Reset refresh attempts counter
       refreshAttempts.current = 0;
       
-      // Immediate refresh to get the latest data
-      refreshSubscription();
+      // Immediate refresh to get the latest data with force parameter
+      refreshSubscription(true);
       
       // Schedule multiple refresh attempts with increasing delays and frequency
-      const refreshDelays = [500, 1000, 2000, 3000, 5000, 8000]; // Fibonacci-like sequence for more frequent early checks
+      const refreshDelays = [250, 500, 1000, 2000, 3500, 5000, 8000]; // More frequent early checks
       
       refreshDelays.forEach((delay, index) => {
         setTimeout(() => {
           console.log(`Additional refresh ${index + 1} after subscription update (${delay}ms)`);
-          refreshSubscription();
+          refreshSubscription(true);
         }, delay);
       });
     }
@@ -128,7 +148,7 @@ export const useSubscriptionStatus = () => {
         refreshTimeoutRef.current = null;
       }
     };
-  }, [searchParams, refreshSubscription, hasProcessedPayment, hasProcessedUpdate]);
+  }, [searchParams, refreshSubscription, hasProcessedPayment, hasProcessedUpdate, features.isActive, features.tier]);
 
   // Reset processed flags when URL changes completely (not just params)
   useEffect(() => {
@@ -159,7 +179,7 @@ export const useSubscriptionStatus = () => {
   // Force an immediate refresh when this hook mounts
   useEffect(() => {
     console.log("useSubscriptionStatus mounted - forcing refresh");
-    refreshSubscription();
+    refreshSubscription(true);
   }, [refreshSubscription]);
 
   return {

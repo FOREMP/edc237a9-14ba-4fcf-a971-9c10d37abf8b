@@ -75,12 +75,20 @@ export const useStripePayment = () => {
       if (data.url) {
         console.log('Betalningslänk skapad, omdirigerar till:', data.url);
         
-        // Store the timestamp in localStorage to verify when returning from Stripe
+        // Store the timestamp and plan in localStorage to verify when returning from Stripe
         localStorage.setItem('stripe_checkout_timestamp', timestamp.toString());
         localStorage.setItem('stripe_checkout_plan', plan);
         
         // Open in new tab instead of redirecting
         window.open(data.url, '_blank');
+        
+        // After opening the checkout page, immediately check subscription status
+        // This sets up the system to refresh when the user returns
+        setTimeout(() => {
+          // Navigate to the dashboard with parameters to trigger a subscription check
+          // when the user returns from the payment process
+          navigate(`/dashboard?payment_status=pending&plan=${plan}&ts=${timestamp}`);
+        }, 500);
       } else {
         console.error('Ingen URL returnerades:', data);
         toast.error('Kunde inte skapa betalningslänk. Försök igen senare.');

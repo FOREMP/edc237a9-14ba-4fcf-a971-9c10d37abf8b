@@ -38,33 +38,40 @@ export const useSubscriptionFeatures = () => {
     expiresAt: null
   });
 
-  const refreshSubscription = useCallback(() => {
+  const refreshSubscription = useCallback((forceRefresh = false) => {
     const now = Date.now();
     
-    // Basic throttling - prevent multiple refreshes within 300ms
-    if (now - lastRefreshTime < 300) {
-      console.log("Throttling rapid subscription refresh attempts");
-      return;
-    }
-    
-    // Track consecutive refreshes within a short time window
-    if (now - lastRefreshTime < 2000) {
-      setConsecutiveRefreshCount(prev => prev + 1);
+    // Skip throttling if force refresh is requested
+    if (!forceRefresh) {
+      // Basic throttling - prevent multiple refreshes within 300ms
+      if (now - lastRefreshTime < 300) {
+        console.log("Throttling rapid subscription refresh attempts");
+        return;
+      }
+      
+      // Track consecutive refreshes within a short time window
+      if (now - lastRefreshTime < 2000) {
+        setConsecutiveRefreshCount(prev => prev + 1);
+      } else {
+        setConsecutiveRefreshCount(1); // Reset if outside the window
+      }
+      
+      // Apply increasing delay for rapid successive refreshes to prevent hammering the API
+      const refreshDelay = Math.min(consecutiveRefreshCount * 50, 500);
+      
+      console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
+      setLastRefreshTime(now);
+      
+      // Use setTimeout to apply the adaptive delay
+      setTimeout(() => {
+        setRefreshTrigger(prev => prev + 1);
+      }, refreshDelay);
     } else {
-      setConsecutiveRefreshCount(1); // Reset if outside the window
-    }
-    
-    // Apply increasing delay for rapid successive refreshes to prevent hammering the API
-    const refreshDelay = Math.min(consecutiveRefreshCount * 50, 500);
-    
-    console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
-    setLastRefreshTime(now);
-    
-    // Use setTimeout to apply the adaptive delay
-    setTimeout(() => {
+      // Force refresh bypasses throttling
+      console.log("Force refreshing subscription data immediately");
+      setLastRefreshTime(now);
       setRefreshTrigger(prev => prev + 1);
-    }, refreshDelay);
-    
+    }
   }, [lastRefreshTime, consecutiveRefreshCount]);
 
   // Function to fetch subscription status
@@ -87,13 +94,20 @@ export const useSubscriptionFeatures = () => {
     try {
       console.log("Fetching subscription data for user:", user.id);
       
+      // Force cache busting with a unique parameter
+      const cacheBuster = now.toString();
+      
       // IMPORTANT CHANGE: First try to get from subscribers table with a fresh policy
       // Use a direct query with select count(*) to check if the record exists
       // before attempting to fetch it to avoid "no rows returned" error logging
-      const { count: subscriberCount } = await supabase
+      const { count: subscriberCount, error: countError } = await supabase
         .from('subscribers')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
+
+      if (countError) {
+        console.error('Error checking subscriber count:', countError);
+      }
 
       let subscriberData = null;
       let subscriberError = null;
@@ -102,19 +116,29 @@ export const useSubscriptionFeatures = () => {
         // Set cache control options to force a fresh fetch from the database
         const result = await supabase
           .from('subscribers')
-          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
+          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .order('updated_at', { ascending: false })
+          .maybeSingle()
+          .abortSignal(AbortSignal.timeout(10000));  // Add 10s timeout
         
         subscriberData = result.data;
         subscriberError = result.error;
+        
+        console.log("Subscriber data fetched:", subscriberData);
+      } else {
+        console.log("No subscriber record found, will check Stripe directly");
       }
 
       // Then get from job_posting_limits table with fresh policy
-      const { count: limitsCount } = await supabase
+      const { count: limitsCount, error: limitsCountError } = await supabase
         .from('job_posting_limits')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
+
+      if (limitsCountError) {
+        console.error('Error checking limits count:', limitsCountError);
+      }
 
       let limitsData = null;
       let limitsError = null;
@@ -124,10 +148,16 @@ export const useSubscriptionFeatures = () => {
           .from('job_posting_limits')
           .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .order('updated_at', { ascending: false })
+          .maybeSingle()
+          .abortSignal(AbortSignal.timeout(10000));  // Add 10s timeout
           
         limitsData = result.data;
         limitsError = result.error;
+        
+        console.log("Limits data fetched:", limitsData);
+      } else {
+        console.log("No job posting limits record found");
       }
 
       if (subscriberError && subscriberError.code !== 'PGRST116') {
@@ -138,8 +168,48 @@ export const useSubscriptionFeatures = () => {
         console.error('Error fetching limits data:', limitsError);
       }
 
-      console.log("Subscription data:", subscriberData);
-      console.log("Limits data:", limitsData);
+      // If no subscriber data or subscription has expired, try direct refresh from Stripe
+      if (!subscriberData || !subscriberData?.subscribed || 
+          (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) {
+        
+        console.log("No active subscription found in database, checking with Stripe directly");
+        
+        try {
+          // Call our edge function to check subscription status directly with Stripe
+          const { data: stripeData, error: stripeError } = await supabase.functions.invoke('check-subscription', {
+            body: { 
+              timestamp: now,
+              cache_buster: cacheBuster
+            }
+          });
+          
+          if (stripeError) {
+            console.error('Error checking subscription with Stripe:', stripeError);
+          } else if (stripeData) {
+            console.log("Stripe subscription check result:", stripeData);
+            
+            // If Stripe found an active subscription, we should immediately see updated data
+            // Try to fetch the subscriber data again as it should have been updated by the edge function
+            if (stripeData.subscribed) {
+              const refreshResult = await supabase
+                .from('subscribers')
+                .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id')
+                .eq('user_id', user.id)
+                .maybeSingle();
+                
+              if (refreshResult.data) {
+                console.log("Updated subscriber data after Stripe check:", refreshResult.data);
+                subscriberData = refreshResult.data;
+              } else {
+                // Something went wrong with the update in the edge function
+                console.error("Failed to update subscriber data after Stripe check:", refreshResult.error);
+              }
+            }
+          }
+        } catch (stripeCheckError) {
+          console.error('Exception during Stripe subscription check:', stripeCheckError);
+        }
+      }
 
       // CRITICAL FIX: Always prioritize subscriber data as source of truth
       // Since that's where Stripe webhook will update data
