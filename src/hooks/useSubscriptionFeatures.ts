@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -119,8 +118,7 @@ export const useSubscriptionFeatures = () => {
           .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false })
-          .maybeSingle()
-          .abortSignal(AbortSignal.timeout(10000));  // Add 10s timeout
+          .maybeSingle();
         
         subscriberData = result.data;
         subscriberError = result.error;
@@ -149,8 +147,7 @@ export const useSubscriptionFeatures = () => {
           .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false })
-          .maybeSingle()
-          .abortSignal(AbortSignal.timeout(10000));  // Add 10s timeout
+          .maybeSingle();
           
         limitsData = result.data;
         limitsError = result.error;
