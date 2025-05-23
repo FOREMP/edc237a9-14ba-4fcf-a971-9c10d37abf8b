@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -28,6 +27,12 @@ interface JobViewStat {
   impressions: number;
   detailViews: number;
 }
+
+// Define a proper return type for the testCompanyJobsAccess function
+type TestAccessResult = 
+  | { success: true; jobs: number; message: string; views?: number }
+  | { success: false; error: string; step: string; jobId?: string }
+  | false;
 
 const Statistics = () => {
   const { isAuthenticated, isLoading: authLoading, isCompany, user, adminCheckComplete } = useRequireAuth();
@@ -63,7 +68,7 @@ const Statistics = () => {
   };
 
   // Test jobs access directly with detailed error logging
-  const testCompanyJobsAccess = useCallback(async () => {
+  const testCompanyJobsAccess = useCallback(async (): Promise<TestAccessResult> => {
     if (!isAuthenticated || !user?.id) return false;
     
     try {
@@ -138,8 +143,11 @@ const Statistics = () => {
       console.log("Statistics: Job access check result:", accessResult);
       setHasCheckedJobAccess(true);
       
-      if (!accessResult.success) {
-        setDataError(`Det gick inte att komma åt dina jobbdata: ${accessResult.error}`);
+      // Fix: Check if accessResult is not false before accessing properties
+      if (accessResult && typeof accessResult !== 'boolean') {
+        if (!accessResult.success) {
+          setDataError(`Det gick inte att komma åt dina jobbdata: ${accessResult.error}`);
+        }
       }
     };
     
