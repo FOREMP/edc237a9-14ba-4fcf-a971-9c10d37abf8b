@@ -12,7 +12,7 @@ import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { toast } from "sonner";
 import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
 import StatisticsCard from "@/components/dashboard/StatisticsCard";
-import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
+import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
 import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
@@ -34,8 +34,8 @@ const Dashboard = () => {
   // Use our subscription limits hook
   const { checkPostingLimit } = useSubscriptionLimits();
 
-  // Use our subscription status hook - fix here: use "loading" instead of "isLoading"
-  const { features, loading: featuresLoading, refreshSubscription } = useSubscriptionStatus();
+  // Use our subscription features hook - fix here: use "loading" instead of "isLoading"
+  const { features, loading: featuresLoading, refreshSubscription } = useSubscriptionFeatures();
 
   // Verify profile access - debug for RLS issues
   useEffect(() => {
@@ -72,6 +72,31 @@ const Dashboard = () => {
           console.error("RLS ERROR: Cannot access preferences:", prefError);
           setProfileError(prev => prev ? `${prev} and preferences` : `Database permission error: ${prefError.message}`);
         }
+        
+        // Test access to subscribers table
+        const { error: subError } = await supabase
+          .from('subscribers')
+          .select('id, email, subscribed, subscription_tier')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (subError) {
+          console.error("RLS ERROR: Cannot access subscribers:", subError);
+          setProfileError(prev => prev ? `${prev} and subscribers` : `Database permission error: ${subError.message}`);
+        }
+        
+        // Test access to job_posting_limits table
+        const { error: limitsError } = await supabase
+          .from('job_posting_limits')
+          .select('id, monthly_post_limit, monthly_posts_used')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (limitsError) {
+          console.error("RLS ERROR: Cannot access job_posting_limits:", limitsError);
+          setProfileError(prev => prev ? `${prev} and job_posting_limits` : `Database permission error: ${limitsError.message}`);
+        }
+        
       } catch (err) {
         console.error("Dashboard: Exception during profile check:", err);
         setProfileError(`Error: ${err instanceof Error ? err.message : String(err)}`);

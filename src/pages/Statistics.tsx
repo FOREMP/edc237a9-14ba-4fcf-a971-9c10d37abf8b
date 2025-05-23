@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2Icon, ArrowLeft, AlertTriangle, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
+import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures"; // Changed from useSubscriptionStatus
 import { 
   Table,
   TableBody,
@@ -34,7 +34,7 @@ const Statistics = () => {
   const [jobStats, setJobStats] = useState<JobViewStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const { features } = useSubscriptionStatus();
+  const { features } = useSubscriptionFeatures(); // Changed from useSubscriptionStatus
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [hasCheckedJobAccess, setHasCheckedJobAccess] = useState(false);
 
@@ -58,6 +58,19 @@ const Statistics = () => {
       }
       
       console.log("Statistics: Direct jobs access result:", jobsData);
+      
+      // Test job_views table access - this is critical for statistics
+      const { error: viewsError } = await supabase
+        .from('job_views')
+        .select('count(*)')
+        .eq('job_id', jobsData && jobsData.length > 0 ? jobsData[0].id : '')
+        .limit(1);
+        
+      if (viewsError) {
+        console.error("Statistics: Cannot access job_views:", viewsError);
+        return false;
+      }
+      
       return true;
     } catch (err) {
       console.error("Statistics: Exception during jobs access test:", err);
