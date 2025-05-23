@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { Loader2Icon, AlertTriangle } from "lucide-react";
+import { Loader2Icon, AlertTriangle, Bug } from "lucide-react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ApprovalProcessBanner from "@/components/dashboard/ApprovalProcessBanner";
 import JobDialogs from "@/components/dashboard/JobDialogs";
@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
 import StatisticsCard from "@/components/dashboard/StatisticsCard";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany, adminCheckComplete } = useRequireAuth();
@@ -23,16 +24,63 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [showApprovalMessage, setShowApprovalMessage] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState(false);
   const navigate = useNavigate();
 
   // Use our custom hook for job management
-  const { jobs, isLoading, createJob, deleteJob, refreshJobs, remainingJobs } = useDashboardJobs(activeTab);
+  const { jobs, isLoading: jobsLoading, createJob, deleteJob, refreshJobs, remainingJobs } = useDashboardJobs(activeTab);
   
   // Use our subscription limits hook
   const { checkPostingLimit } = useSubscriptionLimits();
 
   // Use our subscription status hook
-  const { features, refreshSubscription } = useSubscriptionStatus();
+  const { features, refreshSubscription, isLoading: featuresLoading } = useSubscriptionStatus();
+
+  // Verify profile access - debug for RLS issues
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id || !isCompany) return;
+    
+    // Explicitly test profile access for company users
+    const testProfileAccess = async () => {
+      try {
+        console.log("Dashboard: Testing profile access for user", user.id);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        
+        if (error) {
+          console.error("RLS ERROR: Cannot access profile data:", error);
+          setProfileError(`Database permission error: ${error.message}`);
+          toast.error("Cannot load your profile data. This is likely an RLS permission issue.");
+          return;
+        }
+        
+        console.log("Dashboard: Successfully retrieved profile data:", data);
+        setProfileData(data);
+        
+        // Also check for preferences access
+        const { error: prefError } = await supabase
+          .from('user_preferences')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (prefError) {
+          console.error("RLS ERROR: Cannot access preferences:", prefError);
+          setProfileError(prev => prev ? `${prev} and preferences` : `Database permission error: ${prefError.message}`);
+        }
+      } catch (err) {
+        console.error("Dashboard: Exception during profile check:", err);
+        setProfileError(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    
+    testProfileAccess();
+  }, [isAuthenticated, user?.id, isCompany]);
 
   // Set showApprovalMessage based on user preferences
   useEffect(() => {
@@ -70,14 +118,28 @@ const Dashboard = () => {
       email: user?.email,
       hasPreferences: !!preferences,
       hasFeatures: !!features,
-      loadError
+      loadError,
+      profileError,
+      hasProfileData: !!profileData
     });
     
     // Check for potential rendering issues
     if (adminCheckComplete && !authLoading && isAuthenticated && isCompany && user?.role === 'company') {
       console.log("Company user should see dashboard now");
     }
-  }, [isAuthenticated, authLoading, isAdmin, isCompany, user, adminCheckComplete, preferences, features, loadError]);
+  }, [
+    isAuthenticated, 
+    authLoading, 
+    isAdmin, 
+    isCompany, 
+    user, 
+    adminCheckComplete, 
+    preferences, 
+    features, 
+    loadError, 
+    profileData, 
+    profileError
+  ]);
 
   const handleCreateJob = async (formData) => {
     console.log("Starting job creation process");
@@ -192,6 +254,55 @@ const Dashboard = () => {
     );
   }
 
+  // Show RLS permission error if we detected one
+  if (isCompany && profileError) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-16">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-4">Databas åtkomst problem</h2>
+            <p className="mb-4">Du har inte åtkomst till profildata som behövs för att visa denna sida.</p>
+            <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 max-w-lg mx-auto">
+              <p className="text-amber-800 text-sm mb-2 font-medium">Teknisk information:</p>
+              <p className="text-amber-800 text-sm">{profileError}</p>
+              <p className="text-amber-800 text-sm mt-2">Detta är troligtvis ett RLS-policyfel i databasen.</p>
+            </div>
+            <div className="mt-6 flex justify-center gap-4">
+              <button 
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80" 
+                onClick={() => window.location.reload()}
+              >
+                Försök igen
+              </button>
+              <button 
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300" 
+                onClick={() => setDebugMode(!debugMode)}
+              >
+                {debugMode ? "Dölj" : "Visa"} teknisk info
+              </button>
+            </div>
+            {debugMode && (
+              <div className="mt-8 border border-slate-200 rounded-lg p-4 max-w-xl mx-auto bg-slate-50">
+                <h3 className="text-left font-medium mb-2">Debug Information</h3>
+                <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded">
+                  {JSON.stringify({
+                    userId: user?.id,
+                    email: user?.email,
+                    role: user?.role,
+                    isCompany,
+                    hasProfileAccess: !!profileData,
+                    error: profileError
+                  }, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   // Company user dashboard - render this when user is a company
   if (isCompany || (!isAdmin && user?.role === 'company')) {
     console.log("Rendering company dashboard for user:", user?.email);
@@ -222,7 +333,7 @@ const Dashboard = () => {
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               jobs={jobs}
-              isLoading={isLoading}
+              isLoading={jobsLoading}
               handleEditJob={handleEditJob}
               handleDeleteClick={handleDeleteClick}
               onCreateClick={() => setIsDialogOpen(true)}

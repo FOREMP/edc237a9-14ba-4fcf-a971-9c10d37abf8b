@@ -36,6 +36,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   const [sessionChecked, setSessionChecked] = useState(false);
   const [sessionValid, setSessionValid] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [profileAccess, setProfileAccess] = useState<boolean | null>(null);
   
   // Add an explicit session check to verify Supabase authentication
   useEffect(() => {
@@ -52,6 +53,40 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
           const hasValidSession = !!data.session;
           console.log("ProtectedRoute: Direct session check:", hasValidSession ? "Valid session" : "No session");
           setSessionValid(hasValidSession);
+
+          // If we have a valid session, try to access the user's profile to test RLS
+          if (hasValidSession && data.session?.user?.id) {
+            try {
+              console.log("Testing profile access for RLS verification");
+              const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('id, email, role')
+                .eq('id', data.session.user.id)
+                .single();
+              
+              if (profileError) {
+                console.error("RLS PERMISSION ERROR: Cannot access profile data:", profileError);
+                setProfileAccess(false);
+                setAuthError(`RLS permission denied: ${profileError.message}`);
+                
+                // Also test for preferences access
+                const { error: prefError } = await supabase
+                  .from('user_preferences')
+                  .select('id')
+                  .eq('user_id', data.session.user.id)
+                  .maybeSingle();
+                
+                if (prefError) {
+                  console.error("RLS PERMISSION ERROR: Cannot access preferences:", prefError);
+                }
+              } else {
+                console.log("Profile access successful via RLS:", profileData);
+                setProfileAccess(true);
+              }
+            } catch (profileErr) {
+              console.error("Error testing profile access:", profileErr);
+            }
+          }
         }
       } catch (err) {
         console.error("ProtectedRoute: Exception during session verification:", err);
@@ -88,6 +123,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
       role: user?.role,
       sessionChecked,
       sessionValid,
+      profileAccess,
       authError
     });
     
@@ -95,8 +131,26 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     if (authError && !isLoading && adminCheckComplete) {
       toast.error(`Authentication error: ${authError}`);
     }
+
+    // Debug RLS issues specifically for company users
+    if (isCompany && sessionValid && !profileAccess && !isLoading) {
+      console.error("CRITICAL RLS ERROR: Company user cannot access their profile data");
+      toast.error("Permission error: Cannot access your profile data");
+    }
     
-  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid, adminCheckComplete, authError]);
+  }, [
+    isLoading, 
+    isAuthenticated, 
+    isAdmin, 
+    isCompany, 
+    location.pathname, 
+    user, 
+    sessionChecked, 
+    sessionValid, 
+    profileAccess, 
+    adminCheckComplete, 
+    authError
+  ]);
 
   // Show loading state while checking authentication or admin status
   if (showLoading || !sessionChecked || !adminCheckComplete) {
@@ -116,13 +170,37 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Authenticated and authorized - render the children
-  console.log("ProtectedRoute: Authenticated and authorized, rendering children", { 
-    isCompany, 
-    role: user?.role 
-  });
+  // Check for RLS permission failures for company users
+  if (isCompany && !profileAccess && sessionValid) {
+    return (
+      <div className="container mx-auto px-4 py-12">
+        <div className="flex flex-col space-y-4 max-w-4xl mx-auto items-center text-center">
+          <h2 className="text-xl font-semibold text-red-600">Database Permission Error</h2>
+          <p>Your account doesn't have permission to access required data.</p>
+          <p className="text-sm text-muted-foreground">
+            This is likely a Row Level Security (RLS) policy issue in the database.
+          </p>
+          <p className="bg-amber-50 border border-amber-200 rounded-md p-4 mt-4 w-full max-w-lg text-left">
+            <span className="font-medium block mb-2">Technical details:</span>
+            {authError || "Cannot access profile data due to RLS policy restrictions"}
+          </p>
+          <button 
+            onClick={() => {
+              // Force refresh session and retry
+              supabase.auth.refreshSession().then(() => {
+                window.location.reload();
+              });
+            }}
+            className="mt-4 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80"
+          >
+            Refresh and try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   
-  // Additional safeguard - if we don't have user data, show an error
+  // Authenticated and authorized but missing user data - show an error
   if (!user || (!isAdmin && !isCompany && user.role !== 'company' && user.role !== 'admin')) {
     return (
       <div className="container mx-auto px-4 py-12">
@@ -145,6 +223,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     );
   }
   
+  // All checks passed - render the children
   return <>{children}</>;
 };
 

@@ -15,7 +15,21 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
     persistSession: true,
     storage: localStorage,
-    detectSessionInUrl: true
+    detectSessionInUrl: true,
+    flowType: 'pkce'  // Added explicit PKCE flow type for better security
+  },
+  global: {
+    headers: {
+      'x-client-info': 'lovable-web'  // Add client info for better debugging
+    }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  },
+  db: {
+    schema: 'public'
   }
 });
 
@@ -59,5 +73,67 @@ export const cleanupAuthState = () => {
     console.log("Auth state cleanup completed");
   } catch (e) {
     console.error("Error cleaning up auth state:", e);
+  }
+};
+
+// Add a diagnostic helper function for debugging RLS issues
+export const testRlsPermissions = async (userId: string) => {
+  try {
+    // Test profiles access
+    const profileResult = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    // Test preferences access
+    const prefsResult = await supabase
+      .from('user_preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    // Test job posting limits access
+    const limitsResult = await supabase
+      .from('job_posting_limits')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    // Test subscribers table access
+    const subResult = await supabase
+      .from('subscribers')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    return {
+      timestamp: new Date().toISOString(),
+      tests: {
+        profiles: { 
+          success: !profileResult.error, 
+          error: profileResult.error?.message || null 
+        },
+        preferences: { 
+          success: !prefsResult.error, 
+          error: prefsResult.error?.message || null 
+        },
+        jobLimits: { 
+          success: !limitsResult.error, 
+          error: limitsResult.error?.message || null 
+        },
+        subscribers: { 
+          success: !subResult.error, 
+          error: subResult.error?.message || null 
+        }
+      },
+      userId
+    };
+  } catch (error) {
+    return {
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error),
+      userId
+    };
   }
 };
