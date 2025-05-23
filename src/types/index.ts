@@ -1,3 +1,4 @@
+
 export type UserRole = 'company' | 'admin';
 
 export type User = {

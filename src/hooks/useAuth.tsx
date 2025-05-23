@@ -1,6 +1,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { User, UserPreferences } from "@/types";
+import { User, UserPreferences, UserRole } from "@/types";
 import { authService } from "@/services/auth";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -118,8 +118,12 @@ export const useAuth = () => {
     // Set initial admin/company state based on synchronous check
     setIsAdmin(isSpecialAdmin || userData.role === 'admin');
     
-    // FIX: Using explicit string comparison instead of type comparison
-    setIsCompany(userData.role === 'company' && !isSpecialAdmin && userData.role !== 'admin');
+    // Explicit role check for company status
+    if (userData.role === 'company' && !isSpecialAdmin && userData.role !== 'admin') {
+      setIsCompany(true);
+    } else {
+      setIsCompany(false);
+    }
     
     // Then do complete admin check against database - but only if needed
     if (!isSpecialAdmin && userData.role !== 'admin') {
@@ -128,8 +132,12 @@ export const useAuth = () => {
       // Update admin status based on complete check
       setIsAdmin(isUserAdmin);
       
-      // FIX: Using explicit string comparison instead of type comparison
-      setIsCompany(!isUserAdmin && userData.role === 'company');
+      // Update company status based on complete check
+      if (!isUserAdmin && userData.role === 'company') {
+        setIsCompany(true);
+      } else {
+        setIsCompany(false);
+      }
       
       // Update user object if needed
       if (isUserAdmin && userData.role !== 'admin') {
