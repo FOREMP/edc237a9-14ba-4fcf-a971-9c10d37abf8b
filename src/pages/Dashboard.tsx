@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -16,7 +15,7 @@ import StatisticsCard from "@/components/dashboard/StatisticsCard";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 
 const Dashboard = () => {
-  const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany } = useRequireAuth();
+  const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany, adminCheckComplete } = useRequireAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
@@ -42,26 +41,33 @@ const Dashboard = () => {
 
   // Redirect admin to admin dashboard
   useEffect(() => {
-    console.log("Dashboard auth check", { isAdmin, authLoading, role: user?.role });
+    console.log("Dashboard auth check", { 
+      isAdmin, 
+      authLoading, 
+      adminCheckComplete,
+      isCompany,
+      role: user?.role 
+    });
     
-    // Only redirect if we're sure user is an admin and not just still loading
-    if (!authLoading && isAdmin && user?.role === 'admin') {
+    // Only redirect if auth check is complete and user is definitely an admin
+    if (adminCheckComplete && !authLoading && isAdmin && user?.role === 'admin') {
       console.log("Redirecting admin to admin dashboard");
       navigate("/admin");
     }
-  }, [isAdmin, authLoading, navigate, user]);
+  }, [isAdmin, authLoading, navigate, user, adminCheckComplete]);
 
   // Log user authentication status for debugging
   useEffect(() => {
     console.log("Dashboard component user state:", {
       isAuthenticated,
       isLoading: authLoading,
+      adminCheckComplete,
       isAdmin, 
       isCompany,
       role: user?.role,
       email: user?.email
     });
-  }, [isAuthenticated, authLoading, isAdmin, isCompany, user]);
+  }, [isAuthenticated, authLoading, isAdmin, isCompany, user, adminCheckComplete]);
 
   const handleCreateJob = async (formData) => {
     console.log("Starting job creation process");
@@ -116,7 +122,8 @@ const Dashboard = () => {
     }
   };
 
-  if (authLoading) {
+  // Show loading spinner while auth state is initializing or admin check is not complete
+  if (authLoading || !adminCheckComplete) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh]">
@@ -140,48 +147,65 @@ const Dashboard = () => {
     );
   }
 
-  return (
-    <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <DashboardHeader onCreateClick={() => setIsDialogOpen(true)} />
+  // Explicitly check for company users
+  if (isCompany || (!isAdmin && user?.role === 'company')) {
+    // This is where company users will see their dashboard
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <DashboardHeader onCreateClick={() => setIsDialogOpen(true)} />
 
-        {showApprovalMessage && (
-          <ApprovalProcessBanner onDismiss={handleDismissApprovalMessage} />
-        )}
+          {showApprovalMessage && (
+            <ApprovalProcessBanner onDismiss={handleDismissApprovalMessage} />
+          )}
 
-        {/* Subscription Status Card */}
-        <SubscriptionStatusCard 
-          features={features}
-          remainingJobs={remainingJobs}
-          refreshSubscription={refreshSubscription}
-        />
+          {/* Subscription Status Card */}
+          <SubscriptionStatusCard 
+            features={features}
+            remainingJobs={remainingJobs}
+            refreshSubscription={refreshSubscription}
+          />
 
-        {/* Statistics Card - New Addition */}
-        <div className="mb-8">
-          <StatisticsCard />
-        </div>
+          {/* Statistics Card - New Addition */}
+          <div className="mb-8">
+            <StatisticsCard />
+          </div>
 
-        <div className="mb-8">
-          <DashboardTabs 
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            jobs={jobs}
-            isLoading={isLoading}
-            handleEditJob={handleEditJob}
-            handleDeleteClick={handleDeleteClick}
-            onCreateClick={() => setIsDialogOpen(true)}
+          <div className="mb-8">
+            <DashboardTabs 
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              jobs={jobs}
+              isLoading={isLoading}
+              handleEditJob={handleEditJob}
+              handleDeleteClick={handleDeleteClick}
+              onCreateClick={() => setIsDialogOpen(true)}
+            />
+          </div>
+
+          <JobDialogs 
+            isDialogOpen={isDialogOpen}
+            isAlertOpen={isAlertOpen}
+            jobToDelete={jobToDelete}
+            setIsDialogOpen={setIsDialogOpen}
+            setIsAlertOpen={setIsAlertOpen}
+            handleCreateJob={handleCreateJob}
+            handleDeleteConfirm={handleDeleteConfirm}
           />
         </div>
+      </Layout>
+    );
+  }
 
-        <JobDialogs 
-          isDialogOpen={isDialogOpen}
-          isAlertOpen={isAlertOpen}
-          jobToDelete={jobToDelete}
-          setIsDialogOpen={setIsDialogOpen}
-          setIsAlertOpen={setIsAlertOpen}
-          handleCreateJob={handleCreateJob}
-          handleDeleteConfirm={handleDeleteConfirm}
-        />
+  // If we get here, user is authenticated but isn't a company or admin
+  // This is a fallback in case a user has no role assigned
+  return (
+    <Layout>
+      <div className="container mx-auto px-4 py-16">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Välkommen!</h2>
+          <p className="mb-4">Din användarroll är inte konfigurerad. Kontakta administratören.</p>
+        </div>
       </div>
     </Layout>
   );

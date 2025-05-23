@@ -29,7 +29,7 @@ const LoadingState = () => {
 };
 
 const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
-  const { isAuthenticated, isAdmin, isLoading, user, isCompany } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading, user, isCompany, adminCheckComplete } = useAuth();
   const location = useLocation();
   const [showLoading, setShowLoading] = useState(true);
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -64,11 +64,11 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   // Use a timeout to prevent excessive loading state for quick auth checks
   useEffect(() => {
     const timer = setTimeout(() => {
-      setShowLoading(isLoading);
+      setShowLoading(isLoading || !adminCheckComplete);
     }, 300);
     
     return () => clearTimeout(timer);
-  }, [isLoading]);
+  }, [isLoading, adminCheckComplete]);
 
   useEffect(() => {
     // Log auth status only when it changes or the path changes to prevent excessive logging
@@ -78,6 +78,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         isAuthenticated, 
         isAdmin,
         isCompany,
+        adminCheckComplete,
         path: location.pathname,
         email: user?.email,
         isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
@@ -86,10 +87,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         sessionValid
       });
     }
-  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid]);
+  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid, adminCheckComplete]);
 
-  // Show loading state while checking authentication
-  if (showLoading || !sessionChecked) {
+  // Show loading state while checking authentication or admin status
+  if (showLoading || !sessionChecked || !adminCheckComplete) {
     return <LoadingState />;
   }
 

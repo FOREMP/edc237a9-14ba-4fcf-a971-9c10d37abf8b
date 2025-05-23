@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -19,6 +18,7 @@ import { useAdminJobs } from "@/hooks/useAdminJobs";
 import { isAdminEmail } from "@/utils/adminEmails";
 
 const AdminDashboard = () => {
+  // Include adminCheckComplete in destructuring to ensure we wait for admin check
   const { isAuthenticated, isLoading: authLoading, hasAdminAccess, user, isAdmin, adminCheckComplete } = useRequireAuth();
   const { jobs, allJobs, isLoading, error, fetchJobs, retryFetch, updateJobStatus } = useAdminJobs();
   const [activeTab, setActiveTab] = useState<string>("pending");
@@ -104,9 +104,9 @@ const AdminDashboard = () => {
     console.log("AdminDashboard: Auth status -", { 
       isAuthenticated, 
       authLoading,
+      adminCheckComplete,
       hasAdminAccess,
       isAdmin,
-      adminCheckComplete,
       email: user?.email,
       isAdminByEmail: user?.email ? isAdminEmail(user.email) : false,
       role: user?.role,
@@ -117,6 +117,7 @@ const AdminDashboard = () => {
 
   // Make sure only admins can access this page
   useEffect(() => {
+    // Wait for admin check to complete before redirecting
     if (!authLoading && adminCheckComplete) {
       const isUserAdmin = isAdmin || hasAdminAccess || 
                          (user?.email && isAdminEmail(user.email)) || 
@@ -174,6 +175,7 @@ const AdminDashboard = () => {
     }
   };
 
+  // Show loading state while initializing or checking admin status
   if (authLoading || !adminCheckComplete) {
     return (
       <Layout>
