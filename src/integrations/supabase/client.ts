@@ -33,6 +33,43 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   }
 });
 
+// Add debug wrapper to track all Supabase queries
+const originalFrom = supabase.from.bind(supabase);
+supabase.from = function(table: string) {
+  const result = originalFrom(table);
+  
+  // Debug helper for select
+  const originalSelect = result.select.bind(result);
+  result.select = function(...args: any[]) {
+    const query = originalSelect(...args);
+    
+    // Debug wrapper for query execution
+    const originalThen = query.then.bind(query);
+    query.then = function(onfulfilled?: any, onrejected?: any) {
+      console.log(`[Supabase Debug] Executing SELECT on ${table} with args:`, args);
+      
+      return originalThen(
+        (result: any) => {
+          console.log(`[Supabase Debug] SELECT on ${table} completed:`, {
+            success: !result.error,
+            count: Array.isArray(result.data) ? result.data.length : (result.data ? 1 : 0),
+            error: result.error
+          });
+          return onfulfilled ? onfulfilled(result) : result;
+        },
+        (error: any) => {
+          console.error(`[Supabase Debug] SELECT on ${table} failed:`, error);
+          return onrejected ? onrejected(error) : Promise.reject(error);
+        }
+      );
+    };
+    
+    return query;
+  };
+  
+  return result;
+};
+
 // Export a utility function to clean up auth state
 export const cleanupAuthState = () => {
   try {
@@ -269,6 +306,160 @@ export const diagCompanyAccess = async () => {
     return { 
       error: "Diagnosis failed", 
       message: error instanceof Error ? error.message : String(error) 
+    };
+  }
+};
+
+// NEW: Function to check if table contains any data for a user
+export const checkTableData = async (userId: string) => {
+  try {
+    // Check profiles
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId);
+      
+    // Check jobs
+    const { data: jobsData, error: jobsError } = await supabase
+      .from('jobs')
+      .select('id')
+      .eq('company_id', userId);
+      
+    // Check subscribers
+    const { data: subsData, error: subsError } = await supabase
+      .from('subscribers')
+      .select('id')
+      .eq('user_id', userId);
+      
+    // Check posting limits
+    const { data: limitsData, error: limitsError } = await supabase
+      .from('job_posting_limits')
+      .select('id')
+      .eq('user_id', userId);
+      
+    // Check preferences
+    const { data: prefsData, error: prefsError } = await supabase
+      .from('user_preferences')
+      .select('id')
+      .eq('user_id', userId);
+    
+    return {
+      profiles: {
+        error: profileError?.message,
+        count: profileData?.length || 0
+      },
+      jobs: {
+        error: jobsError?.message,
+        count: jobsData?.length || 0
+      },
+      subscribers: {
+        error: subsError?.message,
+        count: subsData?.length || 0
+      },
+      jobPostingLimits: {
+        error: limitsError?.message,
+        count: limitsData?.length || 0
+      },
+      userPreferences: {
+        error: prefsError?.message,
+        count: prefsData?.length || 0
+      }
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
+
+// NEW: Function to fix RLS policy issues
+export const fixCommonRlsIssues = async () => {
+  try {
+    // Check if we need to insert user data
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { error: "No authenticated user found" };
+    }
+    
+    const checkResult = await checkTableData(user.id);
+    console.log("Data check result:", checkResult);
+    
+    let fixResults = {
+      profilesFixed: false,
+      preferencesFixed: false,
+      subscribersFixed: false,
+      limitsFixed: false
+    };
+    
+    // Fix missing profile if needed
+    if (checkResult.profiles?.count === 0) {
+      console.log("Attempting to fix missing profile...");
+      const { data: emailCheck } = await supabase.auth.getUser();
+      
+      if (emailCheck.user) {
+        const { error } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: emailCheck.user.email || 'unknown@example.com',
+            role: 'company',
+            company_name: 'Your Company'
+          });
+        
+        fixResults.profilesFixed = !error;
+      }
+    }
+    
+    // Fix missing preferences if needed
+    if (checkResult.userPreferences?.count === 0) {
+      console.log("Attempting to fix missing user preferences...");
+      const { error } = await supabase
+        .from('user_preferences')
+        .insert({
+          user_id: user.id
+        });
+      
+      fixResults.preferencesFixed = !error;
+    }
+    
+    // Fix missing subscribers entry if needed
+    if (checkResult.subscribers?.count === 0) {
+      console.log("Attempting to fix missing subscriber record...");
+      const { error } = await supabase
+        .from('subscribers')
+        .insert({
+          user_id: user.id,
+          email: user.email || 'unknown@example.com',
+          subscribed: false,
+          subscription_tier: 'free'
+        });
+      
+      fixResults.subscribersFixed = !error;
+    }
+    
+    // Fix missing job posting limits if needed
+    if (checkResult.jobPostingLimits?.count === 0) {
+      console.log("Attempting to fix missing job posting limits...");
+      const { error } = await supabase
+        .from('job_posting_limits')
+        .insert({
+          user_id: user.id,
+          monthly_post_limit: 1,
+          monthly_posts_used: 0,
+          subscription_tier: 'free'
+        });
+      
+      fixResults.limitsFixed = !error;
+    }
+    
+    return {
+      success: true,
+      fixed: fixResults,
+      user: user.id
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 };

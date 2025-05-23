@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { User, UserPreferences, UserRole } from "@/types";
 import { authService } from "@/services/auth";
@@ -15,6 +16,7 @@ export const useAuth = () => {
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
+  const [lastSessionCheck, setLastSessionCheck] = useState<number>(0);
   
   // Use refs to track last auth check time to prevent rapid re-authentication
   const lastAuthCheckRef = useRef<number>(0);
@@ -62,6 +64,36 @@ export const useAuth = () => {
   const dismissApprovalProcess = async () => {
     return await updatePreferences({ approvalProcessDismissed: true });
   };
+
+  // Force refresh the session to ensure we have fresh tokens
+  const forceSessionRefresh = useCallback(async () => {
+    try {
+      console.log("Forcing session refresh...");
+      const now = Date.now();
+      
+      // Don't refresh too frequently
+      if (now - lastSessionCheck < 5000) {
+        console.log("Session refresh skipped - too recent");
+        return;
+      }
+      
+      setLastSessionCheck(now);
+      
+      // Try to refresh the session
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.error("Session refresh failed:", error);
+        return false;
+      }
+      
+      console.log("Session refreshed successfully");
+      return !!data.session;
+    } catch (err) {
+      console.error("Error during session refresh:", err);
+      return false;
+    }
+  }, [lastSessionCheck]);
 
   // Perform a complete admin check against both email and database role
   const performAdminCheck = useCallback(async (currentUser: User) => {
@@ -147,7 +179,7 @@ export const useAuth = () => {
   }, [performAdminCheck]);
 
   // Handle auth state changes with rate limiting
-  const handleAuthChange = useCallback(async (event, session) => {
+  const handleAuthChange = useCallback(async (event: string, session: any) => {
     console.log("Auth event triggered:", event);
     
     // Skip if another auth operation is in progress or if we've checked recently
@@ -305,6 +337,7 @@ export const useAuth = () => {
     preferencesLoading,
     dismissApprovalProcess,
     updatePreferences,
-    adminCheckComplete
+    adminCheckComplete,
+    forceSessionRefresh
   };
 };

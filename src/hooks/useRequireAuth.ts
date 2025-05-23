@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "./useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, checkTableData, fixCommonRlsIssues } from "@/integrations/supabase/client";
 import { isAdminEmail } from "@/utils/adminEmails";
 
 export const useRequireAuth = (redirectUrl: string = "/auth") => {
@@ -12,8 +12,11 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [sessionRefreshed, setSessionRefreshed] = useState(false);
+  const [dataVerified, setDataVerified] = useState(false);
+  const [dataVerificationError, setDataVerificationError] = useState<string | null>(null);
   const lastAuthCheckRef = useRef<number>(0);
   const checkingRef = useRef<boolean>(false);
+  const dataCheckRef = useRef<boolean>(false);
 
   // More robust admin check with backup email verification
   const verifyAdminStatus = useCallback(async () => {
@@ -75,6 +78,63 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
     }
   }, [auth.user?.id, auth.user?.email, auth.user?.role, auth.isAdmin]);
 
+  // Verify data access for the current user
+  const verifyDataAccess = useCallback(async () => {
+    if (!auth.isAuthenticated || !auth.user?.id || auth.isLoading || dataCheckRef.current) return;
+    
+    // Avoid duplicate checks
+    dataCheckRef.current = true;
+    
+    try {
+      console.log("useRequireAuth: Verifying data access for user", auth.user.id);
+      
+      // Check for data existence in key tables
+      const checkResult = await checkTableData(auth.user.id);
+      
+      // Handle critical data issues
+      if (checkResult.profiles?.count === 0 || 
+          checkResult.subscribers?.count === 0 || 
+          checkResult.userPreferences?.count === 0 ||
+          checkResult.jobPostingLimits?.count === 0) {
+        
+        console.warn("useRequireAuth: Missing essential user data detected:", checkResult);
+        
+        // Try to fix common data issues automatically
+        const fixResult = await fixCommonRlsIssues();
+        console.log("useRequireAuth: Auto-fix attempt result:", fixResult);
+        
+        if (fixResult.error) {
+          setDataVerificationError("Could not auto-fix data issues. Please contact support.");
+          setDataVerified(false);
+        } else {
+          // Check if fixes were successful
+          const recheck = await checkTableData(auth.user.id);
+          
+          // Validate fix results
+          if (recheck.profiles?.count > 0 && 
+              recheck.userPreferences?.count > 0) {
+            setDataVerified(true);
+          } else {
+            setDataVerificationError("Essential user data is missing. Please contact support.");
+            setDataVerified(false);
+          }
+        }
+      } else if (checkResult.error) {
+        setDataVerificationError(checkResult.error);
+        setDataVerified(false);
+      } else {
+        // All required data exists
+        setDataVerified(true);
+      }
+    } catch (err) {
+      console.error("useRequireAuth: Error during data verification:", err);
+      setDataVerificationError(`Data access error: ${err instanceof Error ? err.message : String(err)}`);
+      setDataVerified(false);
+    } finally {
+      dataCheckRef.current = false;
+    }
+  }, [auth.isAuthenticated, auth.user?.id, auth.isLoading]);
+
   useEffect(() => {
     const checkAuthAndSession = async () => {
       // If auth is still loading, wait
@@ -93,7 +153,7 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         "isCompany:", auth.isCompany,
         "role:", auth.user?.role);
       
-      // If authenticated, check admin status
+      // If authenticated, check session and data access
       if (auth.isAuthenticated) {
         // Ensure session validity - refresh once per hook lifecycle
         if (!sessionRefreshed) {
@@ -107,6 +167,7 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
               if (!sessionData?.session) {
                 // No valid session - redirect to login
                 console.log("No valid session after refresh attempt");
+                toast.error("Din session har gått ut. Logga in igen.");
                 navigate(redirectUrl, { 
                   state: { from: window.location.pathname },
                   replace: true 
@@ -124,6 +185,11 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         const adminAccess = await verifyAdminStatus();
         setHasAdminAccess(adminAccess);
         console.log("Admin access verification result:", adminAccess);
+        
+        // Check for essential data access - only for company users
+        if (auth.isCompany && !dataVerified && !dataVerificationError) {
+          await verifyDataAccess();
+        }
         
         // Now we can finish the auth check
         setIsCheckingAuth(false);
@@ -154,29 +220,42 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
     navigate, 
     redirectUrl, 
     verifyAdminStatus,
-    sessionRefreshed
+    sessionRefreshed,
+    verifyDataAccess,
+    dataVerified,
+    dataVerificationError
   ]);
 
   // Enhanced debug logging
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log("useRequireAuth state:", {
-        isCheckingAuth,
-        hasAdminAccess,
-        authUser: auth.user,
-        email: auth.user?.email,
-        isAdminByEmail: auth.user?.email ? isAdminEmail(auth.user.email) : false,
-        isAdminByRole: auth.user?.role === 'admin',
-        isCompany: auth.user?.role === 'company',
-        isAdminFromAuthHook: auth.isAdmin,
-        isCompanyFromAuthHook: auth.isCompany
-      });
-    }
-  }, [isCheckingAuth, hasAdminAccess, auth.user, auth.isAdmin, auth.isCompany]);
+    console.log("useRequireAuth state:", {
+      isCheckingAuth,
+      hasAdminAccess,
+      authUser: auth.user,
+      email: auth.user?.email,
+      isAdminByEmail: auth.user?.email ? isAdminEmail(auth.user.email) : false,
+      isAdminByRole: auth.user?.role === 'admin',
+      isCompany: auth.user?.role === 'company',
+      isAdminFromAuthHook: auth.isAdmin,
+      isCompanyFromAuthHook: auth.isCompany,
+      dataVerified,
+      dataVerificationError
+    });
+  }, [
+    isCheckingAuth, 
+    hasAdminAccess, 
+    auth.user, 
+    auth.isAdmin, 
+    auth.isCompany,
+    dataVerified,
+    dataVerificationError
+  ]);
 
   return { 
     ...auth, 
     isLoading: auth.isLoading || isCheckingAuth || !auth.adminCheckComplete,
-    hasAdminAccess: hasAdminAccess || auth.isAdmin || (auth.user?.email ? isAdminEmail(auth.user.email) : false)
+    hasAdminAccess: hasAdminAccess || auth.isAdmin || (auth.user?.email ? isAdminEmail(auth.user.email) : false),
+    dataVerified,
+    dataVerificationError
   };
 };

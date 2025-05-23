@@ -46,6 +46,7 @@ const Statistics = () => {
   const [debugMode, setDebugMode] = useState(true); // Enable debug mode by default for troubleshooting
   const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
   const [runningDiagnosis, setRunningDiagnosis] = useState(false);
+  const [queryLogs, setQueryLogs] = useState<any[]>([]);
 
   // Run diagnostics function to help troubleshoot RLS issues
   const runDiagnostics = async () => {
@@ -65,6 +66,153 @@ const Statistics = () => {
       setDiagnosisResult({ error: String(error) });
     } finally {
       setRunningDiagnosis(false);
+    }
+  };
+
+  // Add function to inspect table access directly
+  const inspectTableAccess = async () => {
+    if (!user?.id) return;
+    
+    setQueryLogs([]);
+    const newLogs = [];
+    
+    try {
+      // Log the current auth session
+      const { data: sessionData } = await supabase.auth.getSession();
+      newLogs.push({
+        table: "auth.session",
+        data: sessionData?.session ? "Valid session found" : "No valid session",
+        error: null,
+        userId: sessionData?.session?.user?.id || "No user ID"
+      });
+      
+      // Direct query to profiles table
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      newLogs.push({
+        table: "profiles",
+        data: profileData,
+        error: profileError,
+        query: `eq('id', '${user.id}')`
+      });
+      
+      // Direct query to user_preferences table
+      const { data: prefsData, error: prefsError } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+        
+      newLogs.push({
+        table: "user_preferences",
+        data: prefsData,
+        error: prefsError,
+        query: `eq('user_id', '${user.id}')`
+      });
+      
+      // Direct query to job_posting_limits table
+      const { data: limitsData, error: limitsError } = await supabase
+        .from('job_posting_limits')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+        
+      newLogs.push({
+        table: "job_posting_limits",
+        data: limitsData,
+        error: limitsError,
+        query: `eq('user_id', '${user.id}')`
+      });
+      
+      // Direct query to subscribers table
+      const { data: subsData, error: subsError } = await supabase
+        .from('subscribers')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+        
+      newLogs.push({
+        table: "subscribers",
+        data: subsData,
+        error: subsError,
+        query: `eq('user_id', '${user.id}')`
+      });
+      
+      // Direct query to jobs table
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('company_id', user.id);
+        
+      newLogs.push({
+        table: "jobs",
+        data: jobsData,
+        error: jobsError,
+        query: `eq('company_id', '${user.id}')`
+      });
+      
+      // If we found jobs, try a direct query to job_views table
+      if (jobsData && jobsData.length > 0) {
+        const jobId = jobsData[0].id;
+        const { data: viewsData, error: viewsError } = await supabase
+          .from('job_views')
+          .select('*')
+          .eq('job_id', jobId.toString())
+          .limit(5);
+          
+        newLogs.push({
+          table: "job_views",
+          data: viewsData,
+          error: viewsError,
+          query: `eq('job_id', '${jobId.toString()}')`
+        });
+      } else {
+        newLogs.push({
+          table: "job_views",
+          data: null,
+          error: "No jobs found to query views",
+          query: "N/A"
+        });
+      }
+      
+      // Update query logs
+      setQueryLogs(newLogs);
+      console.log("Table access inspection results:", newLogs);
+      
+      // Check for data issues or mismatches
+      let foundIssue = false;
+      let issueMessage = "";
+      
+      // Check for RLS permission issues
+      if (profileError || prefsError || limitsError || subsError || jobsError) {
+        foundIssue = true;
+        issueMessage = "RLS policy issues detected. You do not have permissions to access one or more tables.";
+      }
+      
+      // Check for data mismatches
+      if (jobsData && jobsData.length > 0) {
+        const firstJob = jobsData[0];
+        if (firstJob.company_id !== user.id) {
+          foundIssue = true;
+          issueMessage = `Data mismatch detected: Job company_id (${firstJob.company_id}) does not match user.id (${user.id})`;
+        }
+      }
+      
+      if (foundIssue) {
+        toast.error(issueMessage);
+      } else if (newLogs.every(log => !log.error)) {
+        toast.success("All table access checks passed successfully!");
+      }
+      
+    } catch (error) {
+      console.error("Error inspecting table access:", error);
+      toast.error(`Inspection error: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setQueryLogs(prev => newLogs.length ? newLogs : prev);
     }
   };
 
@@ -346,7 +494,7 @@ const Statistics = () => {
               <Bug className="mr-2 text-slate-500" size={20} />
               Debug Tools
             </h3>
-            <div className="flex space-x-2 mb-2">
+            <div className="flex flex-wrap gap-2 mb-2">
               <Button 
                 variant="outline" 
                 size="sm"
@@ -362,6 +510,13 @@ const Statistics = () => {
               >
                 {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
                 Run Diagnostics
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={inspectTableAccess}
+              >
+                Inspect Table Access
               </Button>
               <Button 
                 variant="outline" 
@@ -399,6 +554,31 @@ const Statistics = () => {
                   }, null, 2)}
                 </pre>
               </div>
+              
+              {/* New: Table Access Results Display */}
+              {queryLogs.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-1">Table Access Results:</h4>
+                  <div className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-60">
+                    {queryLogs.map((log, index) => (
+                      <div key={index} className="mb-2 pb-2 border-b border-slate-200">
+                        <div className="font-medium text-slate-700">{log.table}</div>
+                        <div className="text-xs">Query: {log.query}</div>
+                        {log.error ? (
+                          <div className="text-red-500">Error: {typeof log.error === 'object' ? JSON.stringify(log.error) : log.error}</div>
+                        ) : (
+                          <div className="text-green-500">Success: {log.data ? (typeof log.data === 'object' ? 
+                            `Found ${Array.isArray(log.data) ? log.data.length + ' items' : '1 item'}` : 
+                            log.data) : 
+                            'No data returned'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               {diagnosisResult && (
                 <div>
                   <h4 className="text-sm font-medium mb-1">Diagnosis Results:</h4>
