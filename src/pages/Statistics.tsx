@@ -1,10 +1,11 @@
+
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { jobsServiceApi } from "@/services/jobs/jobs-api"; 
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2Icon, ArrowLeft } from "lucide-react";
+import { Loader2Icon, ArrowLeft, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import DeviceStatistics from "@/components/statistics/DeviceStatistics";
 import TrendAnalysis from "@/components/statistics/TrendAnalysis";
+import { toast } from "sonner";
 
 interface JobViewStat {
   id: string;
@@ -28,9 +30,10 @@ interface JobViewStat {
 }
 
 const Statistics = () => {
-  const { isAuthenticated, isLoading: authLoading } = useRequireAuth();
+  const { isAuthenticated, isLoading: authLoading, isCompany, user } = useRequireAuth();
   const [jobStats, setJobStats] = useState<JobViewStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
   const { features } = useSubscriptionStatus();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
@@ -39,25 +42,42 @@ const Statistics = () => {
       if (!isAuthenticated) return;
       
       setIsLoading(true);
+      setDataError(null);
+      
       try {
+        console.log("Statistics: Fetching job statistics for user", user?.id, "role:", user?.role);
+        
         // Fetch all jobs for the current company using our API service
         const jobs = await jobsServiceApi.getCompanyJobs();
         
         if (!jobs || jobs.length === 0) {
+          console.log("Statistics: No jobs found");
           setIsLoading(false);
           return;
         }
 
+        console.log("Statistics: Found", jobs.length, "jobs");
+
         // For each job, get view statistics from job_views table
         const statsPromises = jobs.map(async (job) => {
-          const { impressions, detailViews } = await fetchJobViewCounts(job.id);
-          
-          return {
-            id: job.id,
-            title: job.title,
-            impressions,
-            detailViews
-          };
+          try {
+            const { impressions, detailViews } = await fetchJobViewCounts(job.id);
+            
+            return {
+              id: job.id,
+              title: job.title,
+              impressions,
+              detailViews
+            };
+          } catch (error) {
+            console.error("Error fetching stats for job", job.id, error);
+            return {
+              id: job.id,
+              title: job.title,
+              impressions: 0,
+              detailViews: 0
+            };
+          }
         });
         
         const results = await Promise.all(statsPromises);
@@ -69,13 +89,18 @@ const Statistics = () => {
         }
       } catch (error) {
         console.error("Error fetching statistics:", error);
+        setDataError("Det gick inte att hämta statistik. Kontrollera din internetanslutning och försök igen.");
+        toast.error("Det gick inte att hämta statistik");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchJobStatistics();
-  }, [isAuthenticated, features]);
+    // Only fetch data if authentication is complete and user is logged in
+    if (isAuthenticated && !authLoading) {
+      fetchJobStatistics();
+    }
+  }, [isAuthenticated, authLoading, features, user?.id, user?.role]);
 
   // Helper function to fetch view counts for a specific job
   const fetchJobViewCounts = async (jobId: string) => {
@@ -88,6 +113,7 @@ const Statistics = () => {
         .eq('view_type', 'impression');
       
       if (impressionError) {
+        console.error("Error fetching impression data:", impressionError);
         throw impressionError;
       }
       
@@ -99,6 +125,7 @@ const Statistics = () => {
         .eq('view_type', 'detail');
       
       if (detailError) {
+        console.error("Error fetching detail view data:", detailError);
         throw detailError;
       }
       
@@ -112,11 +139,13 @@ const Statistics = () => {
     }
   };
 
+  // Improved loading state with more information
   if (authLoading) {
     return (
       <Layout>
-        <div className="flex justify-center items-center min-h-[50vh]">
-          <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex justify-center items-center min-h-[50vh] flex-col">
+          <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground">Verifierar användarens behörighet...</p>
         </div>
       </Layout>
     );
@@ -184,6 +213,12 @@ const Statistics = () => {
               <div className="flex justify-center py-8">
                 <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
               </div>
+            ) : dataError ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
+                <p className="text-muted-foreground mb-4">{dataError}</p>
+                <Button onClick={() => window.location.reload()}>Försök igen</Button>
+              </div>
             ) : (
               <Table>
                 <TableCaption>Statistik över dina jobbannonser</TableCaption>
@@ -233,7 +268,7 @@ const Statistics = () => {
         </Card>
 
         {/* Premium Analytics Features */}
-        {features.hasAdvancedStats && selectedJobId && (
+        {features.hasAdvancedStats && selectedJobId && !isLoading && !dataError && (
           <div className="space-y-8">
             <h2 className="text-2xl font-bold mt-8">Premium analys</h2>
             <p className="text-muted-foreground mb-4">Detaljerad statistik för det valda jobbet</p>
