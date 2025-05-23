@@ -101,7 +101,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
-  // Admin route check
+  // Admin route check - only do this check when requireAdmin is true
   if (requireAdmin && !isAdmin && !(user?.email && ADMIN_EMAILS.includes(user.email))) {
     console.log("ProtectedRoute: Not admin, redirecting to dashboard");
     return <Navigate to="/dashboard" replace />;

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -147,9 +148,8 @@ const Dashboard = () => {
     );
   }
 
-  // Explicitly check for company users
+  // Company user dashboard - render this when user is a company
   if (isCompany || (!isAdmin && user?.role === 'company')) {
-    // This is where company users will see their dashboard
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
@@ -166,7 +166,7 @@ const Dashboard = () => {
             refreshSubscription={refreshSubscription}
           />
 
-          {/* Statistics Card - New Addition */}
+          {/* Statistics Card */}
           <div className="mb-8">
             <StatisticsCard />
           </div>
