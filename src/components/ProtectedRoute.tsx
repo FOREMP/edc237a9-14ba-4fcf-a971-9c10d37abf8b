@@ -77,7 +77,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         isLoading, 
         isAuthenticated, 
         isAdmin,
-        isCompany, // Add isCompany to logging
+        isCompany,
         path: location.pathname,
         email: user?.email,
         isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,

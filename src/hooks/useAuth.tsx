@@ -118,7 +118,7 @@ export const useAuth = () => {
     // Set initial admin/company state based on synchronous check
     setIsAdmin(isSpecialAdmin || userData.role === 'admin');
     
-    // FIX: Fixed type comparison issue - compare the role value, not the literal types
+    // FIX: Using explicit string comparison instead of type comparison
     setIsCompany(userData.role === 'company' && !isSpecialAdmin && userData.role !== 'admin');
     
     // Then do complete admin check against database - but only if needed
@@ -128,7 +128,7 @@ export const useAuth = () => {
       // Update admin status based on complete check
       setIsAdmin(isUserAdmin);
       
-      // FIX: Fixed similar issue here by using proper type check against the actual value
+      // FIX: Using explicit string comparison instead of type comparison
       setIsCompany(!isUserAdmin && userData.role === 'company');
       
       // Update user object if needed
