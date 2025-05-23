@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const Auth = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -52,7 +52,11 @@ const Auth = () => {
       isAuthenticated, 
       isLoading, 
       from, 
-      initialCheckDone
+      initialCheckDone,
+      user: user ? {
+        email: user.email,
+        role: user.role
+      } : null
     });
     
     // Check for auth errors in URL
@@ -87,10 +91,10 @@ const Auth = () => {
     
     // Redirect to return path if already authenticated
     if (initialCheckDone && !isLoading && isAuthenticated) {
-      console.log("User is authenticated, redirecting to", from);
+      console.log("User is authenticated, redirecting to", from, "with role", user?.role);
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, isLoading, navigate, from, searchParams, initialCheckDone]);
+  }, [isAuthenticated, isLoading, navigate, from, searchParams, initialCheckDone, user]);
   
   if (isLoading || !initialCheckDone) {
     return (

@@ -37,6 +37,26 @@ export const cleanupAuthState = () => {
         }
       });
     }
+    
+    // Additional cleanup for any custom auth state
+    localStorage.removeItem('auth-state');
+    localStorage.removeItem('auth-user');
+    localStorage.removeItem('auth-session');
+    
+    // Force browser to forget cached auth state
+    if (navigator && navigator.serviceWorker) {
+      try {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.active?.postMessage({
+            type: 'CLEAR_AUTH_CACHE'
+          });
+        });
+      } catch (e) {
+        console.warn("Could not clear service worker cache:", e);
+      }
+    }
+    
+    console.log("Auth state cleanup completed");
   } catch (e) {
     console.error("Error cleaning up auth state:", e);
   }

@@ -89,7 +89,9 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         return;
       }
       
-      console.log("Auth check complete, isAuthenticated:", auth.isAuthenticated);
+      console.log("Auth check complete, isAuthenticated:", auth.isAuthenticated, 
+        "isCompany:", auth.isCompany,
+        "role:", auth.user?.role);
       
       // If authenticated, check admin status
       if (auth.isAuthenticated) {
@@ -97,7 +99,21 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         if (!sessionRefreshed) {
           console.log("Refreshing session in useRequireAuth");
           try {
-            await supabase.auth.refreshSession();
+            const { data, error } = await supabase.auth.refreshSession();
+            if (error) {
+              console.error("Failed to refresh session:", error);
+              // If refresh fails but we still have a valid session check
+              const { data: sessionData } = await supabase.auth.getSession();
+              if (!sessionData?.session) {
+                // No valid session - redirect to login
+                console.log("No valid session after refresh attempt");
+                navigate(redirectUrl, { 
+                  state: { from: window.location.pathname },
+                  replace: true 
+                });
+                return;
+              }
+            }
             setSessionRefreshed(true);
           } catch (err) {
             console.error("Session refresh error:", err);
@@ -131,7 +147,9 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
     auth.isAuthenticated, 
     auth.isLoading, 
     auth.user?.id, 
-    auth.user?.email, 
+    auth.user?.email,
+    auth.user?.role,
+    auth.isCompany,
     auth.adminCheckComplete, 
     navigate, 
     redirectUrl, 
@@ -149,10 +167,12 @@ export const useRequireAuth = (redirectUrl: string = "/auth") => {
         email: auth.user?.email,
         isAdminByEmail: auth.user?.email ? isAdminEmail(auth.user.email) : false,
         isAdminByRole: auth.user?.role === 'admin',
-        isAdminFromAuthHook: auth.isAdmin
+        isCompany: auth.user?.role === 'company',
+        isAdminFromAuthHook: auth.isAdmin,
+        isCompanyFromAuthHook: auth.isCompany
       });
     }
-  }, [isCheckingAuth, hasAdminAccess, auth.user, auth.isAdmin]);
+  }, [isCheckingAuth, hasAdminAccess, auth.user, auth.isAdmin, auth.isCompany]);
 
   return { 
     ...auth, 

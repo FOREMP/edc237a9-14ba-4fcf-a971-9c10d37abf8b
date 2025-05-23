@@ -16,7 +16,7 @@ import StatisticsCard from "@/components/dashboard/StatisticsCard";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 
 const Dashboard = () => {
-  const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user } = useRequireAuth();
+  const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany } = useRequireAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
@@ -42,10 +42,26 @@ const Dashboard = () => {
 
   // Redirect admin to admin dashboard
   useEffect(() => {
-    if (!authLoading && isAdmin) {
+    console.log("Dashboard auth check", { isAdmin, authLoading, role: user?.role });
+    
+    // Only redirect if we're sure user is an admin and not just still loading
+    if (!authLoading && isAdmin && user?.role === 'admin') {
+      console.log("Redirecting admin to admin dashboard");
       navigate("/admin");
     }
-  }, [isAdmin, authLoading, navigate]);
+  }, [isAdmin, authLoading, navigate, user]);
+
+  // Log user authentication status for debugging
+  useEffect(() => {
+    console.log("Dashboard component user state:", {
+      isAuthenticated,
+      isLoading: authLoading,
+      isAdmin, 
+      isCompany,
+      role: user?.role,
+      email: user?.email
+    });
+  }, [isAuthenticated, authLoading, isAdmin, isCompany, user]);
 
   const handleCreateJob = async (formData) => {
     console.log("Starting job creation process");
@@ -105,6 +121,20 @@ const Dashboard = () => {
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh]">
           <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  // Verify access before rendering dashboard content
+  if (!isAuthenticated) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-16">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Åtkomst nekad</h2>
+            <p className="mb-4">Du måste vara inloggad för att visa denna sida.</p>
+          </div>
         </div>
       </Layout>
     );

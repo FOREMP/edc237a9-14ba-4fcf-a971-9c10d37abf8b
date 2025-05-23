@@ -29,7 +29,7 @@ const LoadingState = () => {
 };
 
 const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps) => {
-  const { isAuthenticated, isAdmin, isLoading, user } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading, user, isCompany } = useAuth();
   const location = useLocation();
   const [showLoading, setShowLoading] = useState(true);
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -76,7 +76,8 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
       console.log("ProtectedRoute: Auth status -", { 
         isLoading, 
         isAuthenticated, 
-        isAdmin, 
+        isAdmin,
+        isCompany, // Add isCompany to logging
         path: location.pathname,
         email: user?.email,
         isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
@@ -85,7 +86,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         sessionValid
       });
     }
-  }, [isLoading, isAuthenticated, isAdmin, location.pathname, user, sessionChecked, sessionValid]);
+  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid]);
 
   // Show loading state while checking authentication
   if (showLoading || !sessionChecked) {
@@ -106,7 +107,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   }
 
   // Authenticated and authorized - render the children
-  console.log("ProtectedRoute: Authenticated and authorized, rendering children");
+  console.log("ProtectedRoute: Authenticated and authorized, rendering children", { 
+    isCompany, 
+    role: user?.role 
+  });
   return <>{children}</>;
 };
 
