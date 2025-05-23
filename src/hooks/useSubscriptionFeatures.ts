@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,7 +19,7 @@ export interface SubscriptionFeatures {
 
 export const useSubscriptionFeatures = () => {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Note: this is named 'loading', not 'isLoading'
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
   const [lastQueryTime, setLastQueryTime] = useState<number>(0);

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -35,8 +34,8 @@ const Dashboard = () => {
   // Use our subscription limits hook
   const { checkPostingLimit } = useSubscriptionLimits();
 
-  // Use our subscription status hook
-  const { features, refreshSubscription, isLoading: featuresLoading } = useSubscriptionStatus();
+  // Use our subscription status hook - fix here: use "loading" instead of "isLoading"
+  const { features, loading: featuresLoading, refreshSubscription } = useSubscriptionStatus();
 
   // Verify profile access - debug for RLS issues
   useEffect(() => {
