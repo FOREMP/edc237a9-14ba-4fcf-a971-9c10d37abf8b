@@ -1,10 +1,11 @@
+
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { jobsServiceApi } from "@/services/jobs/jobs-api"; 
-import { supabase } from "@/integrations/supabase/client";
-import { Loader2Icon, ArrowLeft, AlertTriangle, RefreshCw } from "lucide-react";
+import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
+import { Loader2Icon, ArrowLeft, AlertTriangle, RefreshCw, Bug, Database } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures"; // Changed from useSubscriptionStatus
@@ -33,11 +34,35 @@ const Statistics = () => {
   const [jobStats, setJobStats] = useState<JobViewStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const { features } = useSubscriptionFeatures(); // Changed from useSubscriptionStatus
+  const { features, dataFetchError } = useSubscriptionFeatures(); // Changed from useSubscriptionStatus
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [hasCheckedJobAccess, setHasCheckedJobAccess] = useState(false);
+  const [debugMode, setDebugMode] = useState(true); // Enable debug mode by default for troubleshooting
+  const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
+  const [runningDiagnosis, setRunningDiagnosis] = useState(false);
 
-  // Test job access directly to diagnose company user access issues
+  // Run diagnostics function to help troubleshoot RLS issues
+  const runDiagnostics = async () => {
+    setRunningDiagnosis(true);
+    try {
+      const result = await diagCompanyAccess();
+      setDiagnosisResult(result);
+      console.log("Diagnosis result:", result);
+      
+      if (result.error) {
+        toast.error(`Diagnosis found an error: ${result.error}`);
+      } else {
+        toast.success("Diagnosis completed");
+      }
+    } catch (error) {
+      console.error("Error running diagnostics:", error);
+      setDiagnosisResult({ error: String(error) });
+    } finally {
+      setRunningDiagnosis(false);
+    }
+  };
+
+  // Test jobs access directly with detailed error logging
   const testCompanyJobsAccess = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return false;
     
@@ -53,27 +78,55 @@ const Statistics = () => {
       
       if (jobsError) {
         console.error("Statistics: Direct jobs access error:", jobsError);
-        return false;
+        return {
+          success: false,
+          error: jobsError.message,
+          step: 'jobs_table'
+        };
       }
       
       console.log("Statistics: Direct jobs access result:", jobsData);
       
+      // If no jobs found, that's fine but log it
+      if (!jobsData || jobsData.length === 0) {
+        console.log("Statistics: No jobs found for company");
+        return {
+          success: true, 
+          jobs: 0,
+          message: "No jobs found, but table access is working"
+        };
+      }
+      
       // Test job_views table access - this is critical for statistics
-      const { error: viewsError } = await supabase
+      const { data: viewsData, error: viewsError } = await supabase
         .from('job_views')
-        .select('count(*)')
-        .eq('job_id', jobsData && jobsData.length > 0 ? jobsData[0].id : '')
+        .select('job_id, view_type', { count: 'exact' })
+        .eq('job_id', jobsData[0].id.toString())
         .limit(1);
         
       if (viewsError) {
         console.error("Statistics: Cannot access job_views:", viewsError);
-        return false;
+        return {
+          success: false,
+          error: viewsError.message,
+          step: 'job_views_table',
+          jobId: jobsData[0].id
+        };
       }
       
-      return true;
+      return {
+        success: true,
+        jobs: jobsData.length,
+        views: viewsData?.length || 0,
+        message: "All tables accessible"
+      };
     } catch (err) {
       console.error("Statistics: Exception during jobs access test:", err);
-      return false;
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+        step: 'exception'
+      };
     }
   }, [isAuthenticated, user?.id]);
 
@@ -81,12 +134,12 @@ const Statistics = () => {
     const checkJobAccess = async () => {
       if (!isAuthenticated || !user?.id || !isCompany) return;
       
-      const hasAccess = await testCompanyJobsAccess();
-      console.log("Statistics: Job access check result:", hasAccess);
+      const accessResult = await testCompanyJobsAccess();
+      console.log("Statistics: Job access check result:", accessResult);
       setHasCheckedJobAccess(true);
       
-      if (!hasAccess) {
-        setDataError("Det gick inte att komma åt dina jobbdata. Detta kan bero på ett behörighetsproblem.");
+      if (!accessResult.success) {
+        setDataError(`Det gick inte att komma åt dina jobbdata: ${accessResult.error}`);
       }
     };
     
@@ -95,74 +148,77 @@ const Statistics = () => {
     }
   }, [isAuthenticated, authLoading, isCompany, user?.id, adminCheckComplete, hasCheckedJobAccess, testCompanyJobsAccess]);
 
-  useEffect(() => {
-    const fetchJobStatistics = async () => {
-      if (!isAuthenticated) return;
+  const refreshStatistics = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    setIsLoading(true);
+    setDataError(null);
+    
+    try {
+      console.log("Statistics: Fetching job statistics for user", user?.id, "role:", user?.role);
       
-      setIsLoading(true);
-      setDataError(null);
+      // Fetch all jobs for the current company using our API service
+      const jobs = await jobsServiceApi.getCompanyJobs();
       
-      try {
-        console.log("Statistics: Fetching job statistics for user", user?.id, "role:", user?.role);
-        
-        // Fetch all jobs for the current company using our API service
-        const jobs = await jobsServiceApi.getCompanyJobs();
-        
-        if (!jobs || jobs.length === 0) {
-          console.log("Statistics: No jobs found");
-          setIsLoading(false);
-          return;
-        }
-
-        console.log("Statistics: Found", jobs.length, "jobs");
-
-        // For each job, get view statistics from job_views table
-        const statsPromises = jobs.map(async (job) => {
-          try {
-            const { impressions, detailViews } = await fetchJobViewCounts(job.id);
-            
-            return {
-              id: job.id,
-              title: job.title,
-              impressions,
-              detailViews
-            };
-          } catch (error) {
-            console.error("Error fetching stats for job", job.id, error);
-            return {
-              id: job.id,
-              title: job.title,
-              impressions: 0,
-              detailViews: 0
-            };
-          }
-        });
-        
-        const results = await Promise.all(statsPromises);
-        setJobStats(results);
-        
-        // Set first job as selected by default if we have jobs
-        if (results.length > 0 && features.hasAdvancedStats) {
-          setSelectedJobId(results[0].id);
-        }
-      } catch (error) {
-        console.error("Error fetching statistics:", error);
-        setDataError("Det gick inte att hämta statistik. Kontrollera din internetanslutning och försök igen.");
-        toast.error("Det gick inte att hämta statistik");
-      } finally {
+      if (!jobs || jobs.length === 0) {
+        console.log("Statistics: No jobs found");
         setIsLoading(false);
+        setJobStats([]);
+        return;
       }
-    };
 
+      console.log("Statistics: Found", jobs.length, "jobs");
+
+      // For each job, get view statistics from job_views table
+      const statsPromises = jobs.map(async (job) => {
+        try {
+          const { impressions, detailViews } = await fetchJobViewCounts(job.id);
+          
+          return {
+            id: job.id,
+            title: job.title,
+            impressions,
+            detailViews
+          };
+        } catch (error) {
+          console.error("Error fetching stats for job", job.id, error);
+          return {
+            id: job.id,
+            title: job.title,
+            impressions: 0,
+            detailViews: 0
+          };
+        }
+      });
+      
+      const results = await Promise.all(statsPromises);
+      setJobStats(results);
+      
+      // Set first job as selected by default if we have jobs
+      if (results.length > 0 && features.hasAdvancedStats) {
+        setSelectedJobId(results[0].id);
+      }
+    } catch (error) {
+      console.error("Error fetching statistics:", error);
+      setDataError("Det gick inte att hämta statistik. Kontrollera din internetanslutning och försök igen.");
+      toast.error("Det gick inte att hämta statistik");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, features.hasAdvancedStats, user?.id, user?.role]);
+
+  useEffect(() => {
     // Only fetch data if authentication is complete and user is logged in
     if (isAuthenticated && !authLoading && adminCheckComplete && hasCheckedJobAccess) {
-      fetchJobStatistics();
+      refreshStatistics();
     }
-  }, [isAuthenticated, authLoading, features, user?.id, user?.role, adminCheckComplete, hasCheckedJobAccess]);
+  }, [isAuthenticated, authLoading, adminCheckComplete, hasCheckedJobAccess, refreshStatistics]);
 
   // Helper function to fetch view counts for a specific job
   const fetchJobViewCounts = async (jobId: string) => {
     try {
+      console.log("Fetching view counts for job:", jobId);
+      
       // Get impression count
       const { data: impressionData, error: impressionError } = await supabase
         .from('job_views')
@@ -186,6 +242,8 @@ const Statistics = () => {
         console.error("Error fetching detail view data:", detailError);
         throw detailError;
       }
+      
+      console.log(`Job ${jobId} has ${impressionData?.length || 0} impressions and ${detailData?.length || 0} detail views`);
       
       return {
         impressions: impressionData?.length || 0,
@@ -271,6 +329,78 @@ const Statistics = () => {
           </p>
         </div>
 
+        {/* Debug Tools for Troubleshooting */}
+        {debugMode && (
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <h3 className="font-medium text-lg mb-2 flex items-center">
+              <Bug className="mr-2 text-slate-500" size={20} />
+              Debug Tools
+            </h3>
+            <div className="flex space-x-2 mb-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={refreshStatistics}
+              >
+                Refresh Statistics
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={runDiagnostics}
+                disabled={runningDiagnosis}
+              >
+                {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
+                Run Diagnostics
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  localStorage.removeItem('sb-zgcsgwlggvjvvshhhcmb-auth-token');
+                  window.location.reload();
+                }}
+              >
+                Clear Auth Cache
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-4 mt-4">
+              <div>
+                <h4 className="text-sm font-medium mb-1">User and Auth State:</h4>
+                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
+                  {JSON.stringify({
+                    userId: user?.id,
+                    email: user?.email,
+                    role: user?.role,
+                    isCompany,
+                    adminCheckComplete,
+                    authLoading,
+                    isAuthenticated
+                  }, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium mb-1">Features:</h4>
+                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
+                  {JSON.stringify({
+                    ...features,
+                    dataFetchError
+                  }, null, 2)}
+                </pre>
+              </div>
+              {diagnosisResult && (
+                <div>
+                  <h4 className="text-sm font-medium mb-1">Diagnosis Results:</h4>
+                  <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-40">
+                    {JSON.stringify(diagnosisResult, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <Card className="mb-8">
           <CardHeader>
             <CardTitle>Översikt av jobbannonser</CardTitle>
@@ -288,15 +418,14 @@ const Statistics = () => {
                 <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
                 <p className="text-muted-foreground mb-4">{dataError}</p>
                 <Button 
-                  onClick={() => window.location.reload()} 
+                  onClick={refreshStatistics} 
                   className="flex items-center gap-2"
                 >
                   <RefreshCw size={16} />
                   Försök igen
                 </Button>
                 
-                {/* Debug info for data access issues */}
-                {user && (
+                {user && debugMode && (
                   <div className="mt-8 p-4 bg-muted rounded-lg max-w-lg w-full">
                     <h3 className="font-medium mb-2">Debug Information</h3>
                     <pre className="text-xs overflow-auto p-2 bg-slate-100 rounded">
@@ -372,6 +501,17 @@ const Statistics = () => {
             </div>
           </div>
         )}
+
+        {/* Toggle Debug Mode */}
+        <div className="text-center mt-16 text-sm text-slate-400">
+          <button 
+            onClick={() => setDebugMode(!debugMode)}
+            className="inline-flex items-center hover:text-slate-600 transition-colors"
+          >
+            <Bug size={16} className="mr-1" />
+            {debugMode ? "Hide" : "Show"} Debug Mode
+          </button>
+        </div>
       </div>
     </Layout>
   );

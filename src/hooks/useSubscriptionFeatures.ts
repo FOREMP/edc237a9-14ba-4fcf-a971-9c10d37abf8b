@@ -1,6 +1,8 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export type SubscriptionTier = 'free' | 'basic' | 'standard' | 'premium' | 'single';
 
@@ -24,6 +26,7 @@ export const useSubscriptionFeatures = () => {
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
   const [lastQueryTime, setLastQueryTime] = useState<number>(0);
   const [consecutiveRefreshCount, setConsecutiveRefreshCount] = useState(0);
+  const [dataFetchError, setDataFetchError] = useState<string | null>(null);
   const [features, setFeatures] = useState<SubscriptionFeatures>({
     monthlyPostLimit: 1,
     monthlyPostsUsed: 0,
@@ -80,6 +83,7 @@ export const useSubscriptionFeatures = () => {
   const fetchSubscriptionFeatures = useCallback(async () => {
     // Skip if no user is logged in
     if (!user?.id) {
+      console.log("No user, skipping subscription features fetch");
       setLoading(false);
       return;
     }
@@ -92,6 +96,7 @@ export const useSubscriptionFeatures = () => {
     }
     
     setLastQueryTime(now);
+    setDataFetchError(null);
 
     try {
       console.log("Fetching subscription data for user:", user.id);
@@ -109,6 +114,22 @@ export const useSubscriptionFeatures = () => {
 
       if (subscriberError) {
         console.error('Error fetching subscription data:', subscriberError);
+        setDataFetchError(`Subscribers table error: ${subscriberError.message}`);
+        
+        // Try with email instead
+        const { data: subscriberByEmail, error: emailError } = await supabase
+          .from('subscribers')
+          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
+          .eq('email', user.email)
+          .maybeSingle();
+          
+        if (emailError) {
+          console.error('Error fetching subscription by email:', emailError);
+        } else if (subscriberByEmail) {
+          console.log("Found subscription by email instead of user_id");
+          subscriberData = subscriberByEmail;
+          subscriberError = null;
+        }
       } else {
         console.log("Subscriber data fetched directly:", subscriberData);
       }
@@ -122,6 +143,7 @@ export const useSubscriptionFeatures = () => {
         
       if (limitsError) {
         console.error('Error fetching limits data:', limitsError);
+        setDataFetchError(prev => prev ? `${prev}, Limits error: ${limitsError.message}` : `Limits error: ${limitsError.message}`);
       } else {
         console.log("Limits data fetched:", limitsData);
       }
@@ -148,11 +170,13 @@ export const useSubscriptionFeatures = () => {
           
           if (stripeError) {
             console.error('Error checking subscription with Stripe:', stripeError);
+            setDataFetchError(prev => prev ? `${prev}, Stripe error: ${stripeError.message}` : `Stripe error: ${stripeError.message}`);
           } else if (stripeData) {
             console.log("Stripe subscription check result:", stripeData);
           }
         } catch (stripeCheckError) {
           console.error('Exception during Stripe subscription check:', stripeCheckError);
+          setDataFetchError(prev => prev ? `${prev}, Stripe exception: ${String(stripeCheckError)}` : `Stripe exception: ${String(stripeCheckError)}`);
         }
         
         // Try fetching subscriber data again after the edge function updates
@@ -232,14 +256,23 @@ export const useSubscriptionFeatures = () => {
       if (JSON.stringify(features) !== JSON.stringify(updatedFeatures)) {
         console.log("Setting updated features:", updatedFeatures);
         setFeatures(updatedFeatures);
+      } else {
+        console.log("Features unchanged, skipping update");
       }
       
       setLoading(false);
     } catch (error) {
       console.error('Error in useSubscriptionFeatures:', error);
+      setDataFetchError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      // Even with errors, still try to provide default features
+      setFeatures(prev => ({
+        ...prev,
+        isActive: false,
+        tier: 'free'
+      }));
       setLoading(false);
     }
-  }, [user?.id, lastQueryTime, lastRefreshTime, features]);
+  }, [user?.id, user?.email, lastQueryTime, lastRefreshTime, features]);
 
   // Initial fetch and refresh mechanism
   useEffect(() => {
@@ -267,5 +300,5 @@ export const useSubscriptionFeatures = () => {
     }
   }, [user?.id, fetchSubscriptionFeatures]);
 
-  return { features, loading, refreshSubscription };
+  return { features, loading, dataFetchError, refreshSubscription };
 };

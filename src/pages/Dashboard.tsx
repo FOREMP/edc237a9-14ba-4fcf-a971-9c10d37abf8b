@@ -1,8 +1,9 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { Loader2Icon, AlertTriangle, Bug } from "lucide-react";
+import { Loader2Icon, AlertTriangle, Bug, Database, RefreshCw } from "lucide-react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ApprovalProcessBanner from "@/components/dashboard/ApprovalProcessBanner";
 import JobDialogs from "@/components/dashboard/JobDialogs";
@@ -13,7 +14,8 @@ import { toast } from "sonner";
 import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
 import StatisticsCard from "@/components/dashboard/StatisticsCard";
 import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany, adminCheckComplete } = useRequireAuth();
@@ -25,7 +27,9 @@ const Dashboard = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [debugMode, setDebugMode] = useState(false);
+  const [debugMode, setDebugMode] = useState(true); // Set to true by default for troubleshooting
+  const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
+  const [runningDiagnosis, setRunningDiagnosis] = useState(false);
   const navigate = useNavigate();
 
   // Use our custom hook for job management
@@ -35,7 +39,28 @@ const Dashboard = () => {
   const { checkPostingLimit } = useSubscriptionLimits();
 
   // Use our subscription features hook - fix here: use "loading" instead of "isLoading"
-  const { features, loading: featuresLoading, refreshSubscription } = useSubscriptionFeatures();
+  const { features, loading: featuresLoading, refreshSubscription, dataFetchError } = useSubscriptionFeatures();
+
+  // Run diagnostics function to help troubleshoot RLS issues
+  const runDiagnostics = async () => {
+    setRunningDiagnosis(true);
+    try {
+      const result = await diagCompanyAccess();
+      setDiagnosisResult(result);
+      console.log("Diagnosis result:", result);
+      
+      if (result.error) {
+        toast.error(`Diagnosis found an error: ${result.error}`);
+      } else {
+        toast.success("Diagnosis completed");
+      }
+    } catch (error) {
+      console.error("Error running diagnostics:", error);
+      setDiagnosisResult({ error: String(error) });
+    } finally {
+      setRunningDiagnosis(false);
+    }
+  };
 
   // Verify profile access - debug for RLS issues
   useEffect(() => {
@@ -144,7 +169,8 @@ const Dashboard = () => {
       hasFeatures: !!features,
       loadError,
       profileError,
-      hasProfileData: !!profileData
+      hasProfileData: !!profileData,
+      dataFetchError
     });
     
     // Check for potential rendering issues
@@ -162,7 +188,8 @@ const Dashboard = () => {
     features, 
     loadError, 
     profileData, 
-    profileError
+    profileError,
+    dataFetchError
   ]);
 
   const handleCreateJob = async (formData) => {
@@ -305,6 +332,14 @@ const Dashboard = () => {
               >
                 {debugMode ? "Dölj" : "Visa"} teknisk info
               </button>
+              <button 
+                className="px-4 py-2 bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200 flex items-center gap-1" 
+                onClick={runDiagnostics}
+                disabled={runningDiagnosis}
+              >
+                {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <Database size={16} />}
+                Kör diagnostik
+              </button>
             </div>
             {debugMode && (
               <div className="mt-8 border border-slate-200 rounded-lg p-4 max-w-xl mx-auto bg-slate-50">
@@ -316,8 +351,17 @@ const Dashboard = () => {
                     role: user?.role,
                     isCompany,
                     hasProfileAccess: !!profileData,
-                    error: profileError
+                    error: profileError,
+                    dataFetchError
                   }, null, 2)}
+                </pre>
+              </div>
+            )}
+            {diagnosisResult && (
+              <div className="mt-8 border border-slate-200 rounded-lg p-4 max-w-2xl mx-auto bg-slate-50">
+                <h3 className="text-left font-medium mb-2">Diagnosis Results</h3>
+                <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded max-h-96">
+                  {JSON.stringify(diagnosisResult, null, 2)}
                 </pre>
               </div>
             )}
@@ -338,6 +382,109 @@ const Dashboard = () => {
 
           {showApprovalMessage && (
             <ApprovalProcessBanner onDismiss={handleDismissApprovalMessage} />
+          )}
+
+          {dataFetchError && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start">
+                <AlertTriangle className="text-amber-500 mr-3 mt-0.5" size={20} />
+                <div>
+                  <p className="font-medium">Subscription data error</p>
+                  <p className="text-sm text-amber-700">{dataFetchError}</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => refreshSubscription(true)}
+                    className="mt-2 text-xs flex items-center"
+                  >
+                    <RefreshCw size={14} className="mr-1" />
+                    Refresh subscription data
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Debug Tools for Troubleshooting */}
+          {debugMode && (
+            <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+              <h3 className="font-medium text-lg mb-2 flex items-center">
+                <Bug className="mr-2 text-slate-500" size={20} />
+                Debug Tools
+              </h3>
+              <div className="flex space-x-2 mb-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => refreshSubscription(true)}
+                >
+                  Refresh Subscription
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={refreshJobs}
+                >
+                  Refresh Jobs
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={runDiagnostics}
+                  disabled={runningDiagnosis}
+                >
+                  {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
+                  Run Diagnostics
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    localStorage.removeItem('sb-zgcsgwlggvjvvshhhcmb-auth-token');
+                    window.location.reload();
+                  }}
+                >
+                  Clear Auth Cache
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-4 mt-4">
+                <div>
+                  <h4 className="text-sm font-medium mb-1">User and Auth State:</h4>
+                  <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
+                    {JSON.stringify({
+                      userId: user?.id,
+                      email: user?.email,
+                      role: user?.role,
+                      isCompany,
+                      isAdmin,
+                      adminCheckComplete,
+                      authLoading,
+                      isAuthenticated
+                    }, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium mb-1">Features and Subscription:</h4>
+                  <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
+                    {JSON.stringify({
+                      ...features,
+                      featuresLoading,
+                      jobsLoading,
+                      dataFetchError
+                    }, null, 2)}
+                  </pre>
+                </div>
+                {diagnosisResult && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Diagnosis Results:</h4>
+                    <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-40">
+                      {JSON.stringify(diagnosisResult, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Subscription Status Card */}
@@ -373,6 +520,17 @@ const Dashboard = () => {
             handleCreateJob={handleCreateJob}
             handleDeleteConfirm={handleDeleteConfirm}
           />
+
+          {/* Toggle Debug Mode */}
+          <div className="text-center mt-16 text-sm text-slate-400">
+            <button 
+              onClick={() => setDebugMode(!debugMode)}
+              className="inline-flex items-center hover:text-slate-600 transition-colors"
+            >
+              <Bug size={16} className="mr-1" />
+              {debugMode ? "Hide" : "Show"} Debug Mode
+            </button>
+          </div>
         </div>
       </Layout>
     );

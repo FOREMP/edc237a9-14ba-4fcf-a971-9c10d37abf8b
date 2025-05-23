@@ -3,8 +3,10 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button"; 
+import { Loader2Icon, RefreshCw, AlertTriangle, Database } from "lucide-react";
 
 // Maintain a consistent list of admin emails across the app
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
@@ -37,6 +39,29 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   const [sessionValid, setSessionValid] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [profileAccess, setProfileAccess] = useState<boolean | null>(null);
+  const [runningDiagnosis, setRunningDiagnosis] = useState(false);
+  const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
+  
+  // Run diagnostics function for troubleshooting
+  const runDiagnostics = async () => {
+    setRunningDiagnosis(true);
+    try {
+      const result = await diagCompanyAccess();
+      setDiagnosisResult(result);
+      console.log("Route diagnosis result:", result);
+      
+      if (result.error) {
+        toast.error(`Diagnosis found an error: ${result.error}`);
+      } else {
+        toast.success("Diagnosis completed");
+      }
+    } catch (error) {
+      console.error("Error running diagnostics:", error);
+      setDiagnosisResult({ error: String(error) });
+    } finally {
+      setRunningDiagnosis(false);
+    }
+  };
   
   // Add an explicit session check to verify Supabase authentication
   useEffect(() => {
@@ -78,6 +103,19 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
                 
                 if (prefError) {
                   console.error("RLS PERMISSION ERROR: Cannot access preferences:", prefError);
+                }
+                
+                // For company users, also try jobs access which is critical
+                if (profileData?.role === 'company') {
+                  const { error: jobsError } = await supabase
+                    .from('jobs')
+                    .select('id')
+                    .eq('company_id', data.session.user.id)
+                    .limit(1);
+                    
+                  if (jobsError) {
+                    console.error("RLS PERMISSION ERROR: Cannot access jobs:", jobsError);
+                  }
                 }
               } else {
                 console.log("Profile access successful via RLS:", profileData);
@@ -175,6 +213,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     return (
       <div className="container mx-auto px-4 py-12">
         <div className="flex flex-col space-y-4 max-w-4xl mx-auto items-center text-center">
+          <AlertTriangle className="h-10 w-10 text-amber-500 mb-2" />
           <h2 className="text-xl font-semibold text-red-600">Database Permission Error</h2>
           <p>Your account doesn't have permission to access required data.</p>
           <p className="text-sm text-muted-foreground">
@@ -184,17 +223,44 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
             <span className="font-medium block mb-2">Technical details:</span>
             {authError || "Cannot access profile data due to RLS policy restrictions"}
           </p>
-          <button 
-            onClick={() => {
-              // Force refresh session and retry
-              supabase.auth.refreshSession().then(() => {
-                window.location.reload();
-              });
-            }}
-            className="mt-4 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80"
-          >
-            Refresh and try again
-          </button>
+          
+          <div className="flex gap-4 mt-4">
+            <Button 
+              onClick={() => {
+                // Force refresh session and retry
+                supabase.auth.refreshSession().then(() => {
+                  window.location.reload();
+                });
+              }}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw size={16} />
+              Refresh session
+            </Button>
+            
+            <Button 
+              variant="outline"
+              onClick={runDiagnostics}
+              disabled={runningDiagnosis}
+              className="flex items-center gap-2"
+            >
+              {runningDiagnosis ? (
+                <Loader2Icon size={16} className="animate-spin" />
+              ) : (
+                <Database size={16} />
+              )}
+              Run Diagnostics
+            </Button>
+          </div>
+          
+          {diagnosisResult && (
+            <div className="mt-8 border border-slate-200 rounded-lg p-4 w-full max-w-2xl bg-slate-50">
+              <h3 className="text-left font-medium mb-2">Diagnosis Results</h3>
+              <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded max-h-96">
+                {JSON.stringify(diagnosisResult, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -212,12 +278,36 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
             isAdmin,
             email: user.email
           }) : "No user data"}</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80"
-          >
-            Refresh page
-          </button>
+          <div className="flex gap-4">
+            <Button 
+              onClick={() => window.location.reload()}
+            >
+              Refresh page
+            </Button>
+            
+            <Button 
+              variant="outline"
+              onClick={runDiagnostics}
+              disabled={runningDiagnosis}
+              className="flex items-center gap-2"
+            >
+              {runningDiagnosis ? (
+                <Loader2Icon size={16} className="animate-spin" />
+              ) : (
+                <Database size={16} />
+              )}
+              Run Diagnostics
+            </Button>
+          </div>
+          
+          {diagnosisResult && (
+            <div className="mt-8 border border-slate-200 rounded-lg p-4 w-full max-w-2xl bg-slate-50">
+              <h3 className="text-left font-medium mb-2">Diagnosis Results</h3>
+              <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded max-h-96">
+                {JSON.stringify(diagnosisResult, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     );

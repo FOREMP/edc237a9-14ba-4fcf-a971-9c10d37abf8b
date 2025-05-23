@@ -106,25 +106,97 @@ export const testRlsPermissions = async (userId: string) => {
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
+      
+    // Test jobs table access
+    const jobsResult = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('company_id', userId)
+      .limit(1);
+    
+    // Test job_views table access
+    // First get a job id if possible
+    let jobId = null;
+    if (jobsResult.data && jobsResult.data.length > 0) {
+      jobId = jobsResult.data[0].id;
+      
+      // Now test job_views access
+      const viewsResult = await supabase
+        .from('job_views')
+        .select('count(*)')
+        .eq('job_id', jobId.toString())
+        .limit(1);
+        
+      return {
+        timestamp: new Date().toISOString(),
+        tests: {
+          profiles: { 
+            success: !profileResult.error, 
+            error: profileResult.error?.message || null,
+            data: profileResult.data ? 'Data found' : 'No data'
+          },
+          preferences: { 
+            success: !prefsResult.error, 
+            error: prefsResult.error?.message || null,
+            data: prefsResult.data ? 'Data found' : 'No data'
+          },
+          jobLimits: { 
+            success: !limitsResult.error, 
+            error: limitsResult.error?.message || null,
+            data: limitsResult.data ? 'Data found' : 'No data'
+          },
+          subscribers: { 
+            success: !subResult.error, 
+            error: subResult.error?.message || null,
+            data: subResult.data ? 'Data found' : 'No data'
+          },
+          jobs: {
+            success: !jobsResult.error,
+            error: jobsResult.error?.message || null,
+            data: jobsResult.data?.length > 0 ? `Found ${jobsResult.data.length} jobs` : 'No jobs found'
+          },
+          jobViews: {
+            success: jobId ? true : false,
+            error: jobId ? null : 'No job ID available to test views',
+            tested: !!jobId
+          }
+        },
+        userId
+      };
+    }
     
     return {
       timestamp: new Date().toISOString(),
       tests: {
         profiles: { 
           success: !profileResult.error, 
-          error: profileResult.error?.message || null 
+          error: profileResult.error?.message || null,
+          data: profileResult.data ? 'Data found' : 'No data'
         },
         preferences: { 
           success: !prefsResult.error, 
-          error: prefsResult.error?.message || null 
+          error: prefsResult.error?.message || null,
+          data: prefsResult.data ? 'Data found' : 'No data'
         },
         jobLimits: { 
           success: !limitsResult.error, 
-          error: limitsResult.error?.message || null 
+          error: limitsResult.error?.message || null,
+          data: limitsResult.data ? 'Data found' : 'No data'
         },
         subscribers: { 
           success: !subResult.error, 
-          error: subResult.error?.message || null 
+          error: subResult.error?.message || null,
+          data: subResult.data ? 'Data found' : 'No data'
+        },
+        jobs: {
+          success: !jobsResult.error,
+          error: jobsResult.error?.message || null,
+          data: jobsResult.data?.length > 0 ? `Found ${jobsResult.data.length} jobs` : 'No jobs found'
+        },
+        jobViews: {
+          success: false,
+          error: 'No job ID available to test views',
+          tested: false
         }
       },
       userId
@@ -134,6 +206,69 @@ export const testRlsPermissions = async (userId: string) => {
       timestamp: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error),
       userId
+    };
+  }
+};
+
+// Add helper to diagnose company access specifically
+export const diagCompanyAccess = async () => {
+  try {
+    // First get the current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { error: "No authenticated user found" };
+    }
+    
+    console.log("Diagnosing company access for user:", user.email);
+    
+    // Test session validity
+    const { data: sessionData } = await supabase.auth.getSession();
+    const hasValidSession = !!sessionData?.session;
+    
+    // Get current user's role from profile
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, email, company_name')
+      .eq('id', user.id)
+      .single();
+      
+    if (profileError) {
+      console.error("Cannot access profile:", profileError);
+      return {
+        error: "Profile access failed",
+        message: profileError.message,
+        session: hasValidSession ? "Valid" : "Invalid",
+        userId: user.id,
+        userEmail: user.email
+      };
+    }
+    
+    // Get job count
+    const { data: jobsData, error: jobsError } = await supabase
+      .from('jobs')
+      .select('id', { count: 'exact' })
+      .eq('company_id', user.id);
+      
+    // Test full permissions
+    const fullTest = await testRlsPermissions(user.id);
+    
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: profileData?.role,
+        companyName: profileData?.company_name
+      },
+      session: hasValidSession ? "Valid" : "Invalid",
+      jobCount: jobsError ? "Error accessing jobs" : (jobsData?.length || 0),
+      fullTest
+    };
+  } catch (error) {
+    console.error("Error in company access diagnosis:", error);
+    return { 
+      error: "Diagnosis failed", 
+      message: error instanceof Error ? error.message : String(error) 
     };
   }
 };
