@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, AlertTriangle } from "lucide-react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ApprovalProcessBanner from "@/components/dashboard/ApprovalProcessBanner";
 import JobDialogs from "@/components/dashboard/JobDialogs";
@@ -22,6 +22,7 @@ const Dashboard = () => {
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [showApprovalMessage, setShowApprovalMessage] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Use our custom hook for job management
@@ -57,7 +58,7 @@ const Dashboard = () => {
     }
   }, [isAdmin, authLoading, navigate, user, adminCheckComplete]);
 
-  // Log user authentication status for debugging
+  // Enhanced logging for debugging company user issues
   useEffect(() => {
     console.log("Dashboard component user state:", {
       isAuthenticated,
@@ -66,40 +67,61 @@ const Dashboard = () => {
       isAdmin, 
       isCompany,
       role: user?.role,
-      email: user?.email
+      email: user?.email,
+      hasPreferences: !!preferences,
+      hasFeatures: !!features,
+      loadError
     });
-  }, [isAuthenticated, authLoading, isAdmin, isCompany, user, adminCheckComplete]);
+    
+    // Check for potential rendering issues
+    if (adminCheckComplete && !authLoading && isAuthenticated && isCompany && user?.role === 'company') {
+      console.log("Company user should see dashboard now");
+    }
+  }, [isAuthenticated, authLoading, isAdmin, isCompany, user, adminCheckComplete, preferences, features, loadError]);
 
   const handleCreateJob = async (formData) => {
     console.log("Starting job creation process");
     
-    // First check if the user has hit their posting limit
-    const canPost = await checkPostingLimit();
-    console.log("Check posting limit result:", canPost);
-    
-    if (!canPost) {
-      console.log("User has reached their posting limit");
+    try {
+      // First check if the user has hit their posting limit
+      const canPost = await checkPostingLimit();
+      console.log("Check posting limit result:", canPost);
+      
+      if (!canPost) {
+        console.log("User has reached their posting limit");
+        toast.error("Du har nått din månatliga gräns för jobbannonser.");
+        return false;
+      }
+
+      // If they can post, create the job
+      const success = await createJob(formData);
+      if (success) {
+        setIsDialogOpen(false);
+        
+        // Toast notification with success message
+        toast.success("Jobbannonsen har skapats och väntar på godkännande.");
+      } else {
+        toast.error("Det gick inte att skapa jobbannonsen.");
+      }
+      return !!success;
+    } catch (error) {
+      console.error("Error in job creation:", error);
+      toast.error("Ett fel uppstod när jobbannonsen skulle skapas.");
       return false;
     }
-
-    // If they can post, create the job
-    const success = await createJob(formData);
-    if (success) {
-      setIsDialogOpen(false);
-      
-      // Toast notification with success message
-      toast.success("Jobbannonsen har skapats och väntar på godkännande.");
-    } else {
-      toast.error("Det gick inte att skapa jobbannonsen.");
-    }
-    return !!success;
   };
 
   const handleDeleteConfirm = async () => {
     if (!jobToDelete) return;
-    await deleteJob(jobToDelete);
-    setJobToDelete(null);
-    setIsAlertOpen(false);
+    try {
+      await deleteJob(jobToDelete);
+      setJobToDelete(null);
+      setIsAlertOpen(false);
+      toast.success("Jobbannonsen har tagits bort.");
+    } catch (error) {
+      console.error("Error deleting job:", error);
+      toast.error("Det gick inte att ta bort jobbannonsen.");
+    }
   };
 
   const handleDeleteClick = (jobId) => {
@@ -127,8 +149,30 @@ const Dashboard = () => {
   if (authLoading || !adminCheckComplete) {
     return (
       <Layout>
-        <div className="flex justify-center items-center min-h-[50vh]">
-          <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex justify-center items-center min-h-[50vh] flex-col">
+          <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground">Laddar användarinformation...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show error state if there's a loading error
+  if (loadError) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-16">
+          <div className="flex justify-center items-center flex-col">
+            <AlertTriangle className="w-8 h-8 text-amber-500 mb-4" />
+            <p className="text-lg font-medium mb-2">Ett fel uppstod</p>
+            <p className="text-muted-foreground">{loadError}</p>
+            <button 
+              className="mt-4 text-primary hover:underline" 
+              onClick={() => window.location.reload()}
+            >
+              Försök igen
+            </button>
+          </div>
         </div>
       </Layout>
     );
@@ -150,6 +194,8 @@ const Dashboard = () => {
 
   // Company user dashboard - render this when user is a company
   if (isCompany || (!isAdmin && user?.role === 'company')) {
+    console.log("Rendering company dashboard for user:", user?.email);
+    
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
@@ -205,6 +251,15 @@ const Dashboard = () => {
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Välkommen!</h2>
           <p className="mb-4">Din användarroll är inte konfigurerad. Kontakta administratören.</p>
+          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
+            <p>Debug info: Authenticated but role detection failed.</p>
+            <p className="text-sm mt-2">User: {user ? JSON.stringify({
+              email: user.email,
+              role: user.role,
+              isCompany,
+              isAdmin
+            }, null, 2) : "No user data"}</p>
+          </div>
         </div>
       </div>
     </Layout>

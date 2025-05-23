@@ -1,11 +1,11 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { jobsServiceApi } from "@/services/jobs/jobs-api"; 
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2Icon, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Loader2Icon, ArrowLeft, AlertTriangle, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
@@ -30,12 +30,58 @@ interface JobViewStat {
 }
 
 const Statistics = () => {
-  const { isAuthenticated, isLoading: authLoading, isCompany, user } = useRequireAuth();
+  const { isAuthenticated, isLoading: authLoading, isCompany, user, adminCheckComplete } = useRequireAuth();
   const [jobStats, setJobStats] = useState<JobViewStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const { features } = useSubscriptionStatus();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [hasCheckedJobAccess, setHasCheckedJobAccess] = useState(false);
+
+  // Test job access directly to diagnose company user access issues
+  const testCompanyJobsAccess = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) return false;
+    
+    try {
+      console.log("Statistics: Testing direct jobs table access for user", user.id);
+      
+      // First try direct query to jobs table
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('company_id', user.id)
+        .limit(1);
+      
+      if (jobsError) {
+        console.error("Statistics: Direct jobs access error:", jobsError);
+        return false;
+      }
+      
+      console.log("Statistics: Direct jobs access result:", jobsData);
+      return true;
+    } catch (err) {
+      console.error("Statistics: Exception during jobs access test:", err);
+      return false;
+    }
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    const checkJobAccess = async () => {
+      if (!isAuthenticated || !user?.id || !isCompany) return;
+      
+      const hasAccess = await testCompanyJobsAccess();
+      console.log("Statistics: Job access check result:", hasAccess);
+      setHasCheckedJobAccess(true);
+      
+      if (!hasAccess) {
+        setDataError("Det gick inte att komma åt dina jobbdata. Detta kan bero på ett behörighetsproblem.");
+      }
+    };
+    
+    if (isAuthenticated && !authLoading && isCompany && adminCheckComplete && !hasCheckedJobAccess) {
+      checkJobAccess();
+    }
+  }, [isAuthenticated, authLoading, isCompany, user?.id, adminCheckComplete, hasCheckedJobAccess, testCompanyJobsAccess]);
 
   useEffect(() => {
     const fetchJobStatistics = async () => {
@@ -97,10 +143,10 @@ const Statistics = () => {
     };
 
     // Only fetch data if authentication is complete and user is logged in
-    if (isAuthenticated && !authLoading) {
+    if (isAuthenticated && !authLoading && adminCheckComplete && hasCheckedJobAccess) {
       fetchJobStatistics();
     }
-  }, [isAuthenticated, authLoading, features, user?.id, user?.role]);
+  }, [isAuthenticated, authLoading, features, user?.id, user?.role, adminCheckComplete, hasCheckedJobAccess]);
 
   // Helper function to fetch view counts for a specific job
   const fetchJobViewCounts = async (jobId: string) => {
@@ -140,12 +186,24 @@ const Statistics = () => {
   };
 
   // Improved loading state with more information
-  if (authLoading) {
+  if (authLoading || !adminCheckComplete) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh] flex-col">
           <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
           <p className="text-muted-foreground">Verifierar användarens behörighet...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Access verification for company users
+  if (isAuthenticated && isCompany && !hasCheckedJobAccess) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center min-h-[50vh] flex-col">
+          <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground">Verifierar dataåtkomst...</p>
         </div>
       </Layout>
     );
@@ -217,7 +275,30 @@ const Statistics = () => {
               <div className="flex flex-col items-center py-8 text-center">
                 <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
                 <p className="text-muted-foreground mb-4">{dataError}</p>
-                <Button onClick={() => window.location.reload()}>Försök igen</Button>
+                <Button 
+                  onClick={() => window.location.reload()} 
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw size={16} />
+                  Försök igen
+                </Button>
+                
+                {/* Debug info for data access issues */}
+                {user && (
+                  <div className="mt-8 p-4 bg-muted rounded-lg max-w-lg w-full">
+                    <h3 className="font-medium mb-2">Debug Information</h3>
+                    <pre className="text-xs overflow-auto p-2 bg-slate-100 rounded">
+                      {JSON.stringify({
+                        userId: user.id,
+                        email: user.email,
+                        role: user.role,
+                        isCompany,
+                        hasCheckedJobAccess,
+                        features: features || "No features data"
+                      }, null, 2)}
+                    </pre>
+                  </div>
+                )}
               </div>
             ) : (
               <Table>

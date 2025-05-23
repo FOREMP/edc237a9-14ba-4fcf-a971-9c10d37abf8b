@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 // Maintain a consistent list of admin emails across the app
 const ADMIN_EMAILS = ['eric@foremp.se', 'kontakt@skillbaseuf.se'];
@@ -34,6 +35,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   const [showLoading, setShowLoading] = useState(true);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [sessionValid, setSessionValid] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   
   // Add an explicit session check to verify Supabase authentication
   useEffect(() => {
@@ -44,6 +46,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         
         if (error) {
           console.error("ProtectedRoute: Session verification error:", error);
+          setAuthError("Session verification error");
           setSessionValid(false);
         } else {
           const hasValidSession = !!data.session;
@@ -52,6 +55,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
         }
       } catch (err) {
         console.error("ProtectedRoute: Exception during session verification:", err);
+        setAuthError(`Session exception: ${err instanceof Error ? err.message : String(err)}`);
         setSessionValid(false);
       } finally {
         setSessionChecked(true);
@@ -71,23 +75,28 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   }, [isLoading, adminCheckComplete]);
 
   useEffect(() => {
-    // Log auth status only when it changes or the path changes to prevent excessive logging
-    if (process.env.NODE_ENV === 'development') {
-      console.log("ProtectedRoute: Auth status -", { 
-        isLoading, 
-        isAuthenticated, 
-        isAdmin,
-        isCompany,
-        adminCheckComplete,
-        path: location.pathname,
-        email: user?.email,
-        isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
-        role: user?.role,
-        sessionChecked,
-        sessionValid
-      });
+    // Enhanced logging for debugging company user access issues
+    console.log("ProtectedRoute: Auth status -", { 
+      isLoading, 
+      isAuthenticated, 
+      isAdmin,
+      isCompany,
+      adminCheckComplete,
+      path: location.pathname,
+      email: user?.email,
+      isAdminEmail: user?.email ? ADMIN_EMAILS.includes(user.email) : false,
+      role: user?.role,
+      sessionChecked,
+      sessionValid,
+      authError
+    });
+    
+    // Show a toast if we hit an auth error
+    if (authError && !isLoading && adminCheckComplete) {
+      toast.error(`Authentication error: ${authError}`);
     }
-  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid, adminCheckComplete]);
+    
+  }, [isLoading, isAuthenticated, isAdmin, isCompany, location.pathname, user, sessionChecked, sessionValid, adminCheckComplete, authError]);
 
   // Show loading state while checking authentication or admin status
   if (showLoading || !sessionChecked || !adminCheckComplete) {
@@ -112,6 +121,30 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     isCompany, 
     role: user?.role 
   });
+  
+  // Additional safeguard - if we don't have user data, show an error
+  if (!user || (!isAdmin && !isCompany && user.role !== 'company' && user.role !== 'admin')) {
+    return (
+      <div className="container mx-auto px-4 py-12">
+        <div className="flex flex-col space-y-4 max-w-4xl mx-auto items-center text-center">
+          <h2 className="text-xl font-semibold">User role issue detected</h2>
+          <p>User data: {user ? JSON.stringify({
+            role: user.role,
+            isCompany,
+            isAdmin,
+            email: user.email
+          }) : "No user data"}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80"
+          >
+            Refresh page
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
   return <>{children}</>;
 };
 
