@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useCallback, useRef } from "react";
 import { User, UserPreferences, UserRole } from "@/types";
 import { authService } from "@/services/auth";
@@ -108,42 +107,37 @@ export const useAuth = () => {
     // Check admin status directly from email first (synchronous check)
     const isSpecialAdmin = isAdminEmail(userData.email);
     
+    // Get role as UserRole type to ensure TypeScript knows it's part of the union
+    const userRole: UserRole = userData.role;
+    
     // Set initial user state with synchronous admin check
     setUser({
       ...userData,
       // If email is in admin list, ensure role reflects that
-      role: isSpecialAdmin ? 'admin' : userData.role
+      role: isSpecialAdmin ? 'admin' as UserRole : userRole
     });
     
     // Set initial admin/company state based on synchronous check
-    setIsAdmin(isSpecialAdmin || userData.role === 'admin');
+    setIsAdmin(isSpecialAdmin || userRole === 'admin');
     
-    // Explicit role check for company status
-    if (userData.role === 'company' && !isSpecialAdmin && userData.role !== 'admin') {
-      setIsCompany(true);
-    } else {
-      setIsCompany(false);
-    }
+    // Explicit role check for company status using the typed userRole
+    setIsCompany(userRole === 'company' && !isSpecialAdmin && userRole !== 'admin');
     
     // Then do complete admin check against database - but only if needed
-    if (!isSpecialAdmin && userData.role !== 'admin') {
+    if (!isSpecialAdmin && userRole !== 'admin') {
       const isUserAdmin = await performAdminCheck(userData);
       
       // Update admin status based on complete check
       setIsAdmin(isUserAdmin);
       
-      // Update company status based on complete check
-      if (!isUserAdmin && userData.role === 'company') {
-        setIsCompany(true);
-      } else {
-        setIsCompany(false);
-      }
+      // Update company status based on complete check using typed role
+      setIsCompany(!isUserAdmin && userRole === 'company');
       
       // Update user object if needed
-      if (isUserAdmin && userData.role !== 'admin') {
+      if (isUserAdmin && userRole !== 'admin') {
         setUser({
           ...userData,
-          role: 'admin' // Ensure user object reflects admin role
+          role: 'admin' as UserRole // Ensure user object reflects admin role with explicit typing
         });
       }
     }
