@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import Layout from "@/components/Layout";
@@ -295,7 +294,7 @@ const Statistics = () => {
       // Fix: Check if accessResult is not false before accessing properties
       if (accessResult && typeof accessResult !== 'boolean') {
         // Further check if success is false before accessing error property
-        if (!accessResult.success) {
+        if (!accessResult.success && 'error' in accessResult) {
           setDataError(`Det gick inte att komma åt dina jobbdata: ${accessResult.error}`);
         }
       }

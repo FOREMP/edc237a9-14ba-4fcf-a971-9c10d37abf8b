@@ -1,8 +1,54 @@
+
 // Create a more comprehensive and debuggable jobs API service
 
-import { Job, JobFormData } from "@/types";
+import { Job, JobFormData, JobFilter, JobStatus } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+// Helper function to map database fields to frontend Job type
+const mapDbJobToFrontend = (dbJob: any): Job => {
+  return {
+    id: dbJob.id,
+    companyId: dbJob.company_id,
+    title: dbJob.title,
+    description: dbJob.description,
+    requirements: dbJob.requirements || "",
+    jobType: dbJob.job_type,
+    educationRequired: dbJob.education_required,
+    location: dbJob.location,
+    salary: dbJob.salary,
+    phone: dbJob.phone,
+    email: dbJob.email,
+    createdAt: new Date(dbJob.created_at),
+    updatedAt: new Date(dbJob.updated_at),
+    companyName: dbJob.company_name,
+    status: dbJob.status,
+    expiresAt: new Date(dbJob.expires_at)
+  };
+};
+
+// Helper function to convert frontend job data to database format
+const mapFrontendJobToDb = (job: JobFormData, companyId: string, companyName: string) => {
+  // Calculate expiry date - default to 30 days from now
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + 30);
+
+  return {
+    company_id: companyId,
+    company_name: companyName,
+    title: job.title,
+    description: job.description,
+    requirements: job.requirements,
+    job_type: job.jobType,
+    education_required: job.educationRequired,
+    location: job.location,
+    salary: job.salary,
+    phone: job.phone,
+    email: job.email,
+    expires_at: expiryDate.toISOString(),
+    status: "pending" as JobStatus
+  };
+};
 
 /**
  * Jobs service API implementation
@@ -75,13 +121,13 @@ export const jobsServiceApi = {
             console.log("JobsAPI: All jobs appear to be marked as expired");
             
             // Return these anyway for diagnostic purposes
-            return allJobs as Job[];
+            return allJobs.map(job => mapDbJobToFrontend(job));
           }
         }
       }
 
       // Return jobs or empty array
-      return jobs as Job[] || [];
+      return jobs ? jobs.map(job => mapDbJobToFrontend(job)) : [];
     } catch (error) {
       console.error("JobsAPI: Exception fetching company jobs:", error);
       return [];
@@ -117,10 +163,140 @@ export const jobsServiceApi = {
       }
 
       console.log(`JobsAPI: Found ${data?.length || 0} expired jobs for company ${user.id}`);
-      return data as Job[] || [];
+      return data ? data.map(job => mapDbJobToFrontend(job)) : [];
     } catch (error) {
       console.error("JobsAPI: Exception fetching expired jobs:", error);
       return [];
+    }
+  },
+  
+  /**
+   * Get all jobs (for public listing)
+   */
+  getAllJobs: async (): Promise<Job[]> => {
+    try {
+      console.log("JobsAPI: Fetching all approved jobs");
+      
+      // Get all approved jobs that are not expired
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('status', 'approved')
+        .filter('expires_at', 'gt', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("JobsAPI: Failed to fetch all jobs:", error);
+        throw error;
+      }
+
+      console.log(`JobsAPI: Found ${data?.length || 0} active approved jobs`);
+      return data ? data.map(job => mapDbJobToFrontend(job)) : [];
+    } catch (error) {
+      console.error("JobsAPI: Exception fetching all jobs:", error);
+      return [];
+    }
+  },
+  
+  /**
+   * Get filtered jobs based on criteria
+   */
+  getFilteredJobs: async (filter: JobFilter): Promise<Job[]> => {
+    try {
+      console.log("JobsAPI: Fetching filtered jobs with filter:", filter);
+      
+      // Start with a base query
+      let query = supabase
+        .from('jobs')
+        .select('*');
+      
+      // Apply status filter if provided
+      if (filter.status) {
+        query = query.eq('status', filter.status);
+      } else {
+        // Default to approved jobs for public listing
+        query = query.eq('status', 'approved');
+      }
+      
+      // Filter by expired/not expired
+      if (filter.showExpired === false) {
+        query = query.filter('expires_at', 'gt', new Date().toISOString());
+      } else if (filter.showExpired === true) {
+        query = query.filter('expires_at', 'lt', new Date().toISOString());
+      }
+      
+      // Apply job type filter if provided
+      if (filter.jobType && filter.jobType.length > 0) {
+        query = query.in('job_type', filter.jobType);
+      }
+      
+      // Apply education filter if provided
+      if (filter.educationRequired !== null && filter.educationRequired !== undefined) {
+        query = query.eq('education_required', filter.educationRequired);
+      }
+      
+      // Apply location filter if provided
+      if (filter.location) {
+        query = query.ilike('location', `%${filter.location}%`);
+      }
+      
+      // Apply search filter if provided
+      if (filter.search) {
+        query = query.or(`title.ilike.%${filter.search}%,description.ilike.%${filter.search}%`);
+      }
+      
+      // Apply sorting
+      if (filter.sortBy === 'oldest') {
+        query = query.order('created_at', { ascending: true });
+      } else {
+        // Default to newest first
+        query = query.order('created_at', { ascending: false });
+      }
+      
+      // Execute the query
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("JobsAPI: Failed to fetch filtered jobs:", error);
+        throw error;
+      }
+      
+      console.log(`JobsAPI: Found ${data?.length || 0} filtered jobs`);
+      return data ? data.map(job => mapDbJobToFrontend(job)) : [];
+    } catch (error) {
+      console.error("JobsAPI: Exception fetching filtered jobs:", error);
+      return [];
+    }
+  },
+  
+  /**
+   * Get job by ID
+   */
+  getJobById: async (jobId: string): Promise<Job | null> => {
+    try {
+      console.log("JobsAPI: Fetching job by ID:", jobId);
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single();
+      
+      if (error) {
+        console.error("JobsAPI: Failed to fetch job by ID:", error);
+        throw error;
+      }
+      
+      if (!data) {
+        console.log("JobsAPI: No job found with ID:", jobId);
+        return null;
+      }
+      
+      console.log("JobsAPI: Found job:", data.title);
+      return mapDbJobToFrontend(data);
+    } catch (error) {
+      console.error("JobsAPI: Exception fetching job by ID:", error);
+      return null;
     }
   },
   
@@ -144,18 +320,17 @@ export const jobsServiceApi = {
         .eq('id', user.id)
         .single();
       
-      // Prepare job data with company info
-      const newJobData = {
-        ...jobData,
-        company_id: user.id,
-        company_name: profile?.company_name || jobData.company_name || "",
-        status: "pending"
-      };
+      // Prepare job data for database
+      const dbJobData = mapFrontendJobToDb(
+        jobData, 
+        user.id, 
+        profile?.company_name || ""
+      );
       
       // Insert the job
       const { data, error } = await supabase
         .from('jobs')
-        .insert([newJobData])
+        .insert([dbJobData])
         .select()
         .single();
       
@@ -165,10 +340,94 @@ export const jobsServiceApi = {
       }
       
       console.log("JobsAPI: Job created successfully:", data);
-      return data as Job;
+      return data ? mapDbJobToFrontend(data) : null;
     } catch (error) {
       console.error("JobsAPI: Exception creating job:", error);
       return null;
+    }
+  },
+  
+  /**
+   * Update an existing job
+   */
+  updateJob: async (jobId: string, jobData: JobFormData): Promise<Job | null> => {
+    try {
+      console.log("JobsAPI: Updating job:", jobId);
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("JobsAPI: No authenticated user found when trying to update job");
+        throw new Error("Authentication required");
+      }
+      
+      // Verify this user owns the job first
+      const { data: existingJob, error: checkError } = await supabase
+        .from('jobs')
+        .select('company_id, company_name')
+        .eq('id', jobId)
+        .eq('company_id', user.id)
+        .single();
+        
+      if (checkError || !existingJob) {
+        console.error("JobsAPI: Job ownership check failed or job not found:", checkError);
+        throw new Error("Job not found or you don't have permission to update it");
+      }
+      
+      // Update job with new data
+      const updateData = {
+        title: jobData.title,
+        description: jobData.description,
+        requirements: jobData.requirements,
+        job_type: jobData.jobType,
+        education_required: jobData.educationRequired,
+        location: jobData.location,
+        salary: jobData.salary,
+        phone: jobData.phone,
+        email: jobData.email,
+        updated_at: new Date().toISOString()
+      };
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .update(updateData)
+        .eq('id', jobId)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error("JobsAPI: Failed to update job:", error);
+        throw error;
+      }
+      
+      console.log("JobsAPI: Job updated successfully:", data);
+      return data ? mapDbJobToFrontend(data) : null;
+    } catch (error) {
+      console.error("JobsAPI: Exception updating job:", error);
+      return null;
+    }
+  },
+
+  /**
+   * Update job status (for admin)
+   */
+  updateJobStatus: async (jobId: string, status: JobStatus): Promise<boolean> => {
+    try {
+      console.log(`JobsAPI: Updating job ${jobId} status to ${status}`);
+      
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+      
+      if (error) {
+        console.error("JobsAPI: Failed to update job status:", error);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("JobsAPI: Exception updating job status:", error);
+      return false;
     }
   },
   
