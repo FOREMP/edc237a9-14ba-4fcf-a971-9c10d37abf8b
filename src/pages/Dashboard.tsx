@@ -3,19 +3,21 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { Loader2Icon, AlertTriangle, Bug, Database, RefreshCw } from "lucide-react";
-import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
+import { useSubscriptionPlan } from "@/hooks/useSubscriptionPlan";
+import { Loader2Icon, Bug, RefreshCw } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading: authLoading, isAdmin, user, isCompany, adminCheckComplete } = useRequireAuth();
+  const { tier, isActive, loading: planLoading, refreshPlan, error: planError } = useSubscriptionPlan();
   const [debugInfo, setDebugInfo] = useState<any>({});
   const [sessionInfo, setSessionInfo] = useState<any>({});
   const [isDebugging, setIsDebugging] = useState(false);
   const [hasRendered, setHasRendered] = useState(false);
   const navigate = useNavigate();
 
-  // Prevent infinite renders by tracking if we've already rendered
+  // Track rendering to prevent infinite loops
   useEffect(() => {
     setHasRendered(true);
   }, []);
@@ -24,7 +26,7 @@ const Dashboard = () => {
   const runSessionCheck = async () => {
     setIsDebugging(true);
     try {
-      console.log("=== SESSION DEBUG START ===");
+      console.log("=== DASHBOARD SESSION DEBUG START ===");
       
       // Check current session
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -49,10 +51,14 @@ const Dashboard = () => {
         adminCheckComplete,
         authLoading,
         userRole: user?.role,
-        userEmail: user?.email
+        userEmail: user?.email,
+        subscriptionTier: tier,
+        subscriptionActive: isActive,
+        planLoading,
+        planError
       });
       
-      console.log("=== SESSION DEBUG END ===");
+      console.log("=== DASHBOARD SESSION DEBUG END ===");
     } catch (error) {
       console.error("Session debug error:", error);
     } finally {
@@ -68,17 +74,19 @@ const Dashboard = () => {
     }
   }, [isAdmin, authLoading, navigate, user, adminCheckComplete, hasRendered]);
 
-  // Show loading spinner while auth state is initializing
-  if (authLoading || !adminCheckComplete || !hasRendered) {
+  // Show loading spinner while auth or plan state is initializing
+  if (authLoading || !adminCheckComplete || !hasRendered || planLoading) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh] flex-col">
           <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
-          <p className="text-muted-foreground">Laddar användarinformation...</p>
+          <p className="text-muted-foreground">Laddar dashboard...</p>
           <div className="mt-4 text-sm text-gray-500">
             <p>Auth Loading: {authLoading.toString()}</p>
             <p>Admin Check Complete: {adminCheckComplete.toString()}</p>
             <p>Is Authenticated: {isAuthenticated.toString()}</p>
+            <p>Plan Loading: {planLoading.toString()}</p>
+            <p>Current Tier: {tier}</p>
           </div>
         </div>
       </Layout>
@@ -104,7 +112,7 @@ const Dashboard = () => {
 
   // Company user dashboard
   if (isCompany || (!isAdmin && user?.role === 'company')) {
-    console.log("Rendering company dashboard for user:", user?.email);
+    console.log("Rendering company dashboard for user:", user?.email, "with plan:", tier);
     
     return (
       <Layout>
@@ -112,14 +120,36 @@ const Dashboard = () => {
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-              <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard mounted successfully!</h2>
-              <p className="text-green-700">You are authenticated as a company user.</p>
+              <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard laddat!</h2>
+              <p className="text-green-700">
+                Du är inloggad som företagsanvändare med {tier} plan
+                {isActive ? ' (aktiv)' : ' (ej aktiv)'}
+              </p>
             </div>
           </div>
 
-          {/* User Information */}
+          {/* Subscription Status */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-medium text-lg mb-2">User Information</h3>
+            <h3 className="font-medium text-lg mb-2">Prenumerationsstatus</h3>
+            <div className="space-y-2 text-sm">
+              <p><strong>Plan:</strong> {tier.charAt(0).toUpperCase() + tier.slice(1)}</p>
+              <p><strong>Status:</strong> {isActive ? 'Aktiv' : 'Inaktiv'}</p>
+              {planError && <p className="text-red-600"><strong>Fel:</strong> {planError}</p>}
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => refreshPlan(true)}
+              className="mt-2"
+            >
+              <RefreshCw size={16} className="mr-1" />
+              Uppdatera prenumeration
+            </Button>
+          </div>
+
+          {/* User Information */}
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <h3 className="font-medium text-lg mb-2">Användarinformation</h3>
             <div className="space-y-2 text-sm">
               <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
               <p><strong>Role:</strong> {user?.role || 'Not available'}</p>
@@ -164,7 +194,7 @@ const Dashboard = () => {
           </div>
 
           {/* Navigation Buttons */}
-          <div className="flex space-x-4">
+          <div className="flex flex-wrap gap-4">
             <Button onClick={() => navigate("/")}>
               Hem
             </Button>
@@ -173,6 +203,9 @@ const Dashboard = () => {
             </Button>
             <Button onClick={() => navigate("/statistics")}>
               Statistik
+            </Button>
+            <Button onClick={() => navigate("/pricing")}>
+              Prenumerationer
             </Button>
             <Button 
               variant="outline"
@@ -205,7 +238,9 @@ const Dashboard = () => {
                 isCompany,
                 isAdmin,
                 adminCheckComplete,
-                authLoading
+                authLoading,
+                subscriptionTier: tier,
+                subscriptionActive: isActive
               }, null, 2)}</pre>
             </div>
           </div>
