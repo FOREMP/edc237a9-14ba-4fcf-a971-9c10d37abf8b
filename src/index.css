@@ -94,11 +94,25 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* Ensure minimum 4px spacing on all sides for mobile */
+  @media (max-width: 499px) {
+    .container {
+      @apply px-1;
+    }
+  }
 }
 
 @layer components {
   .job-card {
     @apply p-6 border rounded-lg shadow-sm hover:shadow-md transition-all duration-200;
+  }
+  
+  /* Mobile-friendly job cards */
+  @media (max-width: 499px) {
+    .job-card {
+      @apply p-4;
+    }
   }
   
   .job-card-fulltime {
@@ -135,6 +149,13 @@
 
   .pricing-card {
     @apply border rounded-lg p-6 transition-all duration-200 flex flex-col;
+  }
+
+  /* Mobile-friendly pricing cards */
+  @media (max-width: 499px) {
+    .pricing-card {
+      @apply p-4;
+    }
   }
 
   .pricing-card-popular {

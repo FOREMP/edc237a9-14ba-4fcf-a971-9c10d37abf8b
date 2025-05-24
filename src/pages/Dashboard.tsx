@@ -33,34 +33,36 @@ const Dashboard = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <DashboardHeader onCreateClick={handleCreateClick} />
-        
-        <SubscriptionStatusCard 
-          features={features}
-          remainingJobs={features.monthlyPostLimit - features.monthlyPostsUsed}
-          refreshSubscription={refreshSubscription}
-        />
-        
-        <DashboardTabs
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          jobs={jobs}
-          isLoading={isLoading}
-          handleEditJob={handleEdit}
-          handleDeleteClick={handleDelete}
-          onCreateClick={handleCreateClick}
-        />
+      <div className="container mx-auto px-4 py-8 min-h-screen">
+        <div className="max-w-7xl mx-auto">
+          <DashboardHeader onCreateClick={handleCreateClick} />
+          
+          <SubscriptionStatusCard 
+            features={features}
+            remainingJobs={features.monthlyPostLimit - features.monthlyPostsUsed}
+            refreshSubscription={refreshSubscription}
+          />
+          
+          <DashboardTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            jobs={jobs}
+            isLoading={isLoading}
+            handleEditJob={handleEdit}
+            handleDeleteClick={handleDelete}
+            onCreateClick={handleCreateClick}
+          />
 
-        <JobDialogs
-          isDialogOpen={isDialogOpen}
-          setIsDialogOpen={setIsDialogOpen}
-          isAlertOpen={isAlertOpen}
-          setIsAlertOpen={setIsAlertOpen}
-          handleCreateJob={handleCreateJob}
-          handleDeleteConfirm={handleDeleteConfirm}
-          jobToDelete={jobToDelete}
-        />
+          <JobDialogs
+            isDialogOpen={isDialogOpen}
+            setIsDialogOpen={setIsDialogOpen}
+            isAlertOpen={isAlertOpen}
+            setIsAlertOpen={setIsAlertOpen}
+            handleCreateJob={handleCreateJob}
+            handleDeleteConfirm={handleDeleteConfirm}
+            jobToDelete={jobToDelete}
+          />
+        </div>
       </div>
     </Layout>
   );

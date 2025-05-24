@@ -28,14 +28,44 @@ const DashboardTabs = ({
 
   return (
     <Tabs defaultValue={activeTab} value={activeTab} onValueChange={setActiveTab}>
-      <div className="px-2 max-w-full overflow-x-auto">
-        <TabsList className="mb-6 w-full justify-start">
-          <TabsTrigger value="company" className={isMobile ? "text-xs" : ""}>Ditt företag</TabsTrigger>
-          <TabsTrigger value="all" className={isMobile ? "text-xs" : ""}>Alla jobb</TabsTrigger>
-          <TabsTrigger value="pending" className={isMobile ? "text-xs" : ""}>Väntar godkännande</TabsTrigger>
-          <TabsTrigger value="approved" className={isMobile ? "text-xs" : ""}>Godkända</TabsTrigger>
-          <TabsTrigger value="rejected" className={isMobile ? "text-xs" : ""}>Nekade</TabsTrigger>
-          <TabsTrigger value="expired" className={isMobile ? "text-xs" : ""}>Utgångna</TabsTrigger>
+      <div className="px-1 max-w-full overflow-x-auto">
+        <TabsList className={`mb-6 w-full ${isMobile ? 'flex-col h-auto gap-1 p-1' : 'justify-start'}`}>
+          <TabsTrigger 
+            value="company" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Ditt företag
+          </TabsTrigger>
+          <TabsTrigger 
+            value="all" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Alla jobb
+          </TabsTrigger>
+          <TabsTrigger 
+            value="pending" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Väntar godkännande
+          </TabsTrigger>
+          <TabsTrigger 
+            value="approved" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Godkända
+          </TabsTrigger>
+          <TabsTrigger 
+            value="rejected" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Nekade
+          </TabsTrigger>
+          <TabsTrigger 
+            value="expired" 
+            className={`${isMobile ? 'w-full justify-start text-sm py-3' : 'text-xs'}`}
+          >
+            Utgångna
+          </TabsTrigger>
         </TabsList>
       </div>
       
