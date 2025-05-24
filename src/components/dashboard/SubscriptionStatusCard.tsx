@@ -1,4 +1,3 @@
-
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -93,6 +92,12 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
     }
   };
 
+  const handleStatisticsClick = () => {
+    if (features.hasJobViewStats || features.hasAdvancedStats) {
+      navigate('/statistics');
+    }
+  };
+
   // Calculate the used vs total jobs based on the subscription tier
   const usedJobs = features.monthlyPostsUsed || 0;
   const totalJobs = features.monthlyPostLimit;
@@ -100,6 +105,28 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   
   // Determine if subscription is actually active
   const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
+
+  const getStatisticsText = () => {
+    if (features.tier === 'basic') {
+      return 'Inte tillgänglig';
+    } else if (features.tier === 'standard') {
+      return 'Grundläggande statistik';
+    } else if (features.tier === 'premium') {
+      return 'Avancerad statistik';
+    }
+    return 'Inte tillgänglig';
+  };
+
+  const getStatisticsIcon = () => {
+    if (features.hasAdvancedStats) {
+      return <Sparkles className="h-4 w-4 mr-1" />;
+    } else if (features.hasJobViewStats) {
+      return <PieChart className="h-4 w-4 mr-1" />;
+    }
+    return null;
+  };
+
+  const canAccessStats = features.hasJobViewStats || features.hasAdvancedStats;
 
   return (
     <Card className="mb-8">
@@ -133,19 +160,18 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
             )}
           </div>
           
-          <div className="p-4 border rounded-lg">
+          <div 
+            className={`p-4 border rounded-lg ${canAccessStats ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+            onClick={canAccessStats ? handleStatisticsClick : undefined}
+          >
             <div className="text-sm text-muted-foreground mb-1">Statistik</div>
             <div className="font-medium">
-              {features.hasAdvancedStats ? (
-                <span className="flex items-center text-purple-600">
-                  <Sparkles className="h-4 w-4 mr-1" /> Avancerad statistik
-                </span>
-              ) : features.hasJobViewStats ? (
-                <span className="flex items-center text-blue-600">
-                  <PieChart className="h-4 w-4 mr-1" /> Visningsstatistik
+              {canAccessStats ? (
+                <span className={`flex items-center ${features.hasAdvancedStats ? 'text-purple-600' : 'text-blue-600'}`}>
+                  {getStatisticsIcon()} {getStatisticsText()}
                 </span>
               ) : (
-                <span className="text-muted-foreground">Grundläggande</span>
+                <span className="text-muted-foreground">{getStatisticsText()}</span>
               )}
             </div>
           </div>
