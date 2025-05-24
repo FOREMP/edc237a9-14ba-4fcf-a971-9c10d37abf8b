@@ -7,7 +7,7 @@ import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
 import { Loader2Icon, ArrowLeft, AlertTriangle, RefreshCw, Bug, Database } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures"; // Changed from useSubscriptionStatus
+import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
 import { 
   Table,
   TableBody,
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import DeviceStatistics from "@/components/statistics/DeviceStatistics";
 import TrendAnalysis from "@/components/statistics/TrendAnalysis";
+import JobViewsChart from "@/components/statistics/JobViewsChart";
 import { toast } from "sonner";
 
 interface JobViewStat {
@@ -39,10 +40,10 @@ const Statistics = () => {
   const [jobStats, setJobStats] = useState<JobViewStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const { features, dataFetchError } = useSubscriptionFeatures(); // Changed from useSubscriptionStatus
+  const { features, dataFetchError } = useSubscriptionFeatures();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [hasCheckedJobAccess, setHasCheckedJobAccess] = useState(false);
-  const [debugMode, setDebugMode] = useState(true); // Enable debug mode by default for troubleshooting
+  const [debugMode, setDebugMode] = useState(true);
   const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
   const [runningDiagnosis, setRunningDiagnosis] = useState(false);
   const [queryLogs, setQueryLogs] = useState<any[]>([]);
@@ -679,14 +680,31 @@ const Statistics = () => {
         </Card>
 
         {/* Premium Analytics Features */}
-        {features.hasAdvancedStats && selectedJobId && !isLoading && !dataError && (
+        {features.hasAdvancedStats && !isLoading && !dataError && (
           <div className="space-y-8">
             <h2 className="text-2xl font-bold mt-8">Premium analys</h2>
-            <p className="text-muted-foreground mb-4">Detaljerad statistik för det valda jobbet</p>
+            <p className="text-muted-foreground mb-4">Detaljerad statistik och avancerade insikter</p>
             
-            <div className="grid md:grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Job Views Chart for Premium */}
+            <JobViewsChart jobStats={jobStats} />
+            
+            {selectedJobId && (
+              <div className="grid md:grid-cols-1 lg:grid-cols-2 gap-8">
+                <DeviceStatistics jobId={selectedJobId} />
+                <TrendAnalysis jobId={selectedJobId} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Standard Analytics Features */}
+        {features.hasJobViewStats && !features.hasAdvancedStats && selectedJobId && !isLoading && !dataError && (
+          <div className="space-y-8">
+            <h2 className="text-2xl font-bold mt-8">Grundläggande analys</h2>
+            <p className="text-muted-foreground mb-4">Visningsstatistik för det valda jobbet</p>
+            
+            <div className="grid md:grid-cols-1 gap-8">
               <DeviceStatistics jobId={selectedJobId} />
-              <TrendAnalysis jobId={selectedJobId} />
             </div>
           </div>
         )}

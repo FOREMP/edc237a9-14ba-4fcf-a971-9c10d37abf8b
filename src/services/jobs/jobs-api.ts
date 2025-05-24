@@ -1,4 +1,3 @@
-
 // Create a more comprehensive and debuggable jobs API service
 
 import { Job, JobFormData, JobFilter, JobStatus } from "@/types";
@@ -173,28 +172,69 @@ export const jobsServiceApi = {
   /**
    * Get all jobs (for public listing)
    */
-  getAllJobs: async (): Promise<Job[]> => {
+  getAllJobs: async (filters?: JobFilter): Promise<Job[]> => {
     try {
-      console.log("JobsAPI: Fetching all approved jobs");
-      
-      // Get all approved jobs that are not expired
-      const { data, error } = await supabase
+      let query = supabase
         .from('jobs')
-        .select('*')
-        .eq('status', 'approved')
-        .filter('expires_at', 'gt', new Date().toISOString())
-        .order('created_at', { ascending: false });
+        .select(`
+          *,
+          profiles!jobs_company_id_fkey(company_name)
+        `)
+        .eq('status', 'approved');
+
+      // Add current date filter to only show non-expired jobs
+      const now = new Date().toISOString();
+      query = query.gt('expires_at', now);
+
+      // Apply filters
+      if (filters?.search) {
+        query = query.or(`title.ilike.%${filters.search}%, description.ilike.%${filters.search}%, company_name.ilike.%${filters.search}%`);
+      }
+
+      if (filters?.jobType && filters.jobType.length > 0) {
+        query = query.in('job_type', filters.jobType);
+      }
+
+      if (filters?.educationRequired !== null && filters?.educationRequired !== undefined) {
+        query = query.eq('education_required', filters.educationRequired);
+      }
+
+      if (filters?.location) {
+        query = query.ilike('location', `%${filters.location}%`);
+      }
+
+      // Apply sorting - boosted jobs first, then by boost date (most recent first), then by creation date
+      const sortBy = filters?.sortBy || 'newest';
+      if (sortBy === 'newest') {
+        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+                    .order('created_at', { ascending: false });
+      } else if (sortBy === 'oldest') {
+        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+                    .order('created_at', { ascending: true });
+      } else if (sortBy === 'relevant') {
+        // For relevance, still prioritize boosted jobs but then sort by relevance score
+        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+                    .order('created_at', { ascending: false });
+      }
+
+      const { data, error } = await query;
 
       if (error) {
-        console.error("JobsAPI: Failed to fetch all jobs:", error);
+        console.error('Error fetching jobs:', error);
         throw error;
       }
 
-      console.log(`JobsAPI: Found ${data?.length || 0} active approved jobs`);
-      return data ? data.map(job => mapDbJobToFrontend(job)) : [];
+      // Map the data to include company_name from the joined profiles table
+      return (data || []).map(job => ({
+        ...job,
+        company_name: job.profiles?.company_name || job.company_name,
+        createdAt: new Date(job.created_at),
+        updatedAt: new Date(job.updated_at),
+        expiresAt: new Date(job.expires_at)
+      }));
     } catch (error) {
-      console.error("JobsAPI: Exception fetching all jobs:", error);
-      return [];
+      console.error('Error in getAllJobs:', error);
+      throw error;
     }
   },
   
