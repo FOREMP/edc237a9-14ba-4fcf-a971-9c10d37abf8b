@@ -20,6 +20,7 @@ export const useAuth = () => {
   const authInProgressRef = useRef<boolean>(false);
   const lastAuthEventRef = useRef<string>("");
   const authEventCountRef = useRef<number>(0);
+  const initializationAttempts = useRef<number>(0);
 
   console.log("useAuth: Current state:", {
     isAuthenticated,
@@ -157,23 +158,27 @@ export const useAuth = () => {
   const handleAuthChange = useCallback(async (event: string, session: any) => {
     console.log("useAuth: Auth event triggered:", event);
     
-    // Prevent auth loops by tracking consecutive events
+    // Prevent auth loops by limiting rapid events
     authEventCountRef.current += 1;
-    if (authEventCountRef.current > 10) {
-      console.warn("useAuth: Too many auth events, skipping to prevent loop");
+    if (authEventCountRef.current > 20) {
+      console.warn("useAuth: Too many auth events, pausing to prevent loop");
+      setTimeout(() => {
+        authEventCountRef.current = 0;
+      }, 5000);
       return;
     }
     
     // Reset counter after a delay
     setTimeout(() => {
-      authEventCountRef.current = 0;
-    }, 2000);
+      authEventCountRef.current = Math.max(0, authEventCountRef.current - 1);
+    }, 1000);
     
     if (authInProgressRef.current) {
       console.log("useAuth: Auth operation in progress, skipping");
       return;
     }
     
+    // Prevent duplicate INITIAL_SESSION events
     if (lastAuthEventRef.current === event && event === 'INITIAL_SESSION') {
       console.log("useAuth: Duplicate INITIAL_SESSION event, skipping");
       return;
@@ -212,8 +217,17 @@ export const useAuth = () => {
   useEffect(() => {
     if (authInitialized) return;
     
+    // Prevent infinite initialization attempts
+    initializationAttempts.current += 1;
+    if (initializationAttempts.current > 3) {
+      console.warn("useAuth: Too many initialization attempts, stopping");
+      setIsLoading(false);
+      setAuthInitialized(true);
+      return;
+    }
+    
     let mounted = true;
-    console.log("useAuth: Initializing auth");
+    console.log("useAuth: Initializing auth (attempt", initializationAttempts.current, ")");
     setIsLoading(true);
     setAdminCheckComplete(false);
     authInProgressRef.current = true;

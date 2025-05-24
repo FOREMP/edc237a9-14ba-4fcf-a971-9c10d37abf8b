@@ -14,49 +14,46 @@ const Auth = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [initialCheckDone, setInitialCheckDone] = useState(false);
+  const [hasCheckedSession, setHasCheckedSession] = useState(false);
   
   // Get the return path from location state, or default to dashboard
   const from = location.state?.from || "/dashboard";
   
-  // Add direct session check for more reliability
+  // Single session check on mount - no reloads
   useEffect(() => {
-    const checkDirectSession = async () => {
+    if (hasCheckedSession) return;
+    
+    const checkSession = async () => {
       try {
-        console.log("Auth page: Performing direct session check");
+        console.log("Auth page: Performing initial session check");
         const { data, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error("Auth page: Session check error:", error);
         } else if (data?.session) {
-          console.log("Auth page: Valid session found directly from Supabase");
-          // If we have a session but isAuthenticated is false, 
-          // there might be a sync issue. Force a page reload.
-          if (!isAuthenticated && !isLoading) {
-            console.log("Auth page: Found session but isAuthenticated is false, refreshing page");
-            window.location.reload();
-            return;
-          }
+          console.log("Auth page: Valid session found");
+          // Don't reload - let the auth hook handle the redirect
+        } else {
+          console.log("Auth page: No session found");
         }
       } catch (err) {
         console.error("Auth page: Exception during session check:", err);
       } finally {
         setInitialCheckDone(true);
+        setHasCheckedSession(true);
       }
     };
     
-    checkDirectSession();
-  }, [isAuthenticated, isLoading]);
+    checkSession();
+  }, [hasCheckedSession]);
   
   useEffect(() => {
-    console.log("Auth page loaded, checking auth state", { 
+    console.log("Auth page state:", { 
       isAuthenticated, 
       isLoading, 
       from, 
       initialCheckDone,
-      user: user ? {
-        email: user.email,
-        role: user.role
-      } : null
+      user: user ? { email: user.email, role: user.role } : null
     });
     
     // Check for auth errors in URL
@@ -71,7 +68,7 @@ const Auth = () => {
     // Check for auth code in URL (for OAuth providers)
     const hasAuthParams = searchParams.has('code') || searchParams.has('provider');
     
-    if (hasAuthParams) {
+    if (hasAuthParams && initialCheckDone) {
       console.log("Auth params found in URL, handling OAuth redirect");
       // Let Supabase handle the OAuth redirect
       supabase.auth.getSession().then(({ data, error }) => {
@@ -81,17 +78,15 @@ const Auth = () => {
         } else if (data?.session) {
           console.log("Successfully authenticated from redirect");
           toast.success("Inloggning lyckades!");
-          // Use a short timeout to ensure state is properly updated
-          setTimeout(() => {
-            navigate(from, { replace: true });
-          }, 100);
+          // Navigate without reload
+          navigate(from, { replace: true });
         }
       });
     }
     
-    // Redirect to return path if already authenticated
-    if (initialCheckDone && !isLoading && isAuthenticated) {
-      console.log("User is authenticated, redirecting to", from, "with role", user?.role);
+    // Redirect to return path if already authenticated - but only after initial check
+    if (initialCheckDone && !isLoading && isAuthenticated && user) {
+      console.log("User is authenticated, redirecting to", from, "with role", user.role);
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, from, searchParams, initialCheckDone, user]);

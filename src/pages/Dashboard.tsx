@@ -12,7 +12,13 @@ const Dashboard = () => {
   const [debugInfo, setDebugInfo] = useState<any>({});
   const [sessionInfo, setSessionInfo] = useState<any>({});
   const [isDebugging, setIsDebugging] = useState(false);
+  const [hasRendered, setHasRendered] = useState(false);
   const navigate = useNavigate();
+
+  // Prevent infinite renders by tracking if we've already rendered
+  useEffect(() => {
+    setHasRendered(true);
+  }, []);
 
   // Debug session and authentication state
   const runSessionCheck = async () => {
@@ -27,30 +33,6 @@ const Dashboard = () => {
       // Check current user
       const { data: userData, error: userError } = await supabase.auth.getUser();
       console.log("User check result:", { userData, userError });
-      
-      // Test basic query
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userData?.user?.id)
-          .single();
-        console.log("Profile query result:", { profileData, profileError });
-      } catch (profileErr) {
-        console.error("Profile query exception:", profileErr);
-      }
-      
-      // Test jobs query
-      try {
-        const { data: jobsData, error: jobsError } = await supabase
-          .from('jobs')
-          .select('*')
-          .eq('company_id', userData?.user?.id)
-          .limit(5);
-        console.log("Jobs query result:", { jobsData, jobsError });
-      } catch (jobsErr) {
-        console.error("Jobs query exception:", jobsErr);
-      }
       
       setSessionInfo({
         session: sessionData?.session ? 'Valid' : 'Invalid',
@@ -78,34 +60,16 @@ const Dashboard = () => {
     }
   };
 
-  // Run session check on mount
+  // Redirect admin to admin dashboard - but only once
   useEffect(() => {
-    runSessionCheck();
-  }, []);
-
-  // Log authentication state changes
-  useEffect(() => {
-    console.log("Dashboard auth state changed:", {
-      isAuthenticated,
-      isAdmin,
-      isCompany,
-      adminCheckComplete,
-      authLoading,
-      userRole: user?.role,
-      userEmail: user?.email
-    });
-  }, [isAuthenticated, isAdmin, isCompany, adminCheckComplete, authLoading, user]);
-
-  // Redirect admin to admin dashboard
-  useEffect(() => {
-    if (adminCheckComplete && !authLoading && isAdmin && user?.role === 'admin') {
+    if (hasRendered && adminCheckComplete && !authLoading && isAdmin && user?.role === 'admin') {
       console.log("Redirecting admin to admin dashboard");
-      navigate("/admin");
+      navigate("/admin", { replace: true });
     }
-  }, [isAdmin, authLoading, navigate, user, adminCheckComplete]);
+  }, [isAdmin, authLoading, navigate, user, adminCheckComplete, hasRendered]);
 
   // Show loading spinner while auth state is initializing
-  if (authLoading || !adminCheckComplete) {
+  if (authLoading || !adminCheckComplete || !hasRendered) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh] flex-col">
@@ -138,7 +102,7 @@ const Dashboard = () => {
     );
   }
 
-  // Company user dashboard - simplified version for debugging
+  // Company user dashboard
   if (isCompany || (!isAdmin && user?.role === 'company')) {
     console.log("Rendering company dashboard for user:", user?.email);
     
@@ -150,6 +114,18 @@ const Dashboard = () => {
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
               <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard mounted successfully!</h2>
               <p className="text-green-700">You are authenticated as a company user.</p>
+            </div>
+          </div>
+
+          {/* User Information */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="font-medium text-lg mb-2">User Information</h3>
+            <div className="space-y-2 text-sm">
+              <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
+              <p><strong>Role:</strong> {user?.role || 'Not available'}</p>
+              <p><strong>User ID:</strong> {user?.id || 'Not available'}</p>
+              <p><strong>Is Company:</strong> {isCompany ? 'Yes' : 'No'}</p>
+              <p><strong>Is Admin:</strong> {isAdmin ? 'Yes' : 'No'}</p>
             </div>
           </div>
 
@@ -184,18 +160,6 @@ const Dashboard = () => {
                   {JSON.stringify(sessionInfo, null, 2)}
                 </pre>
               </div>
-            </div>
-          </div>
-
-          {/* User Information */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-medium text-lg mb-2">User Information</h3>
-            <div className="space-y-2 text-sm">
-              <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
-              <p><strong>Role:</strong> {user?.role || 'Not available'}</p>
-              <p><strong>User ID:</strong> {user?.id || 'Not available'}</p>
-              <p><strong>Is Company:</strong> {isCompany ? 'Yes' : 'No'}</p>
-              <p><strong>Is Admin:</strong> {isAdmin ? 'Yes' : 'No'}</p>
             </div>
           </div>
 
