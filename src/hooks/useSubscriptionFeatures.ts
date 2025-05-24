@@ -10,8 +10,8 @@ export interface SubscriptionFeatures {
   monthlyPostLimit: number;
   monthlyPostsUsed: number; 
   hasBasicStats: boolean;
-  hasJobViewStats: boolean; // Standard tier feature
-  hasAdvancedStats: boolean; // Premium tier feature
+  hasJobViewStats: boolean;
+  hasAdvancedStats: boolean;
   canBoostPosts: boolean;
   hasPrioritySupport: boolean;
   isActive: boolean;
@@ -21,11 +21,9 @@ export interface SubscriptionFeatures {
 
 export const useSubscriptionFeatures = () => {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true); // Note: this is named 'loading', not 'isLoading'
+  const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
-  const [lastQueryTime, setLastQueryTime] = useState<number>(0);
-  const [consecutiveRefreshCount, setConsecutiveRefreshCount] = useState(0);
   const [dataFetchError, setDataFetchError] = useState<string | null>(null);
   const [features, setFeatures] = useState<SubscriptionFeatures>({
     monthlyPostLimit: 1,
@@ -43,228 +41,133 @@ export const useSubscriptionFeatures = () => {
   const refreshSubscription = useCallback((shouldForceRefresh = false) => {
     const now = Date.now();
     
-    // More aggressive throttling to reduce API calls
-    if (!shouldForceRefresh) {
-      // Increase basic throttling - prevent multiple refreshes within 1000ms (1 second)
-      if (now - lastRefreshTime < 1000) {
-        console.log("Throttling rapid subscription refresh attempts");
-        return;
-      }
-      
-      // Track consecutive refreshes within a longer time window
-      if (now - lastRefreshTime < 5000) {
-        setConsecutiveRefreshCount(prev => prev + 1);
-      } else {
-        setConsecutiveRefreshCount(1); // Reset if outside the window
-      }
-      
-      // Apply more delay for rapid successive refreshes
-      const refreshDelay = Math.min(consecutiveRefreshCount * 100, 2000);
-      
-      console.log(`Refreshing subscription data (delay: ${refreshDelay}ms)`);
-      setLastRefreshTime(now);
-      
-      // Use setTimeout to apply the adaptive delay
-      setTimeout(() => {
-        setRefreshTrigger(prev => prev + 1);
-      }, refreshDelay);
-    } else {
-      // Even force refreshes should have minimal throttling
-      if (now - lastRefreshTime < 500) {
-        return;
-      }
-      console.log("Force refreshing subscription data");
-      setLastRefreshTime(now);
-      setRefreshTrigger(prev => prev + 1);
+    if (!shouldForceRefresh && now - lastRefreshTime < 1000) {
+      console.log("Throttling rapid subscription refresh attempts");
+      return;
     }
-  }, [lastRefreshTime, consecutiveRefreshCount]);
+    
+    console.log("Refreshing subscription data");
+    setLastRefreshTime(now);
+    setRefreshTrigger(prev => prev + 1);
+  }, [lastRefreshTime]);
 
-  // Function to fetch subscription status
   const fetchSubscriptionFeatures = useCallback(async () => {
-    // Skip if no user is logged in
     if (!user?.id) {
-      console.log("No user, skipping subscription features fetch");
+      console.log("useSubscriptionFeatures: No user, skipping fetch");
       setLoading(false);
       return;
     }
 
-    // Set loading state if we haven't queried recently
-    const now = Date.now();
-    const timeSinceLastQuery = now - lastQueryTime;
-    if (timeSinceLastQuery > 2000) { // Only show loading state for "new" queries
-      setLoading(true);
-    }
-    
-    setLastQueryTime(now);
+    console.log("useSubscriptionFeatures: Fetching for user:", user.id, user.email);
+    setLoading(true);
     setDataFetchError(null);
 
     try {
-      console.log("Fetching subscription data for user:", user.id);
+      // Test session first
+      const { data: sessionCheck, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
       
-      // Force cache busting with a unique parameter
-      const cacheBuster = now.toString();
-      
-      // First try to get from subscribers table directly with auth session
-      // Using 'let' instead of 'const' since we might need to update this variable later
-      let { data: subscriberData, error: subscriberError } = await supabase
-        .from('subscribers')
-        .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (subscriberError) {
-        console.error('Error fetching subscription data:', subscriberError);
-        setDataFetchError(`Subscribers table error: ${subscriberError.message}`);
-        
-        // Try with email instead
-        const { data: subscriberByEmail, error: emailError } = await supabase
-          .from('subscribers')
-          .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
-          .eq('email', user.email)
-          .maybeSingle();
-          
-        if (emailError) {
-          console.error('Error fetching subscription by email:', emailError);
-        } else if (subscriberByEmail) {
-          console.log("Found subscription by email instead of user_id");
-          subscriberData = subscriberByEmail;
-          subscriberError = null;
-        }
-      } else {
-        console.log("Subscriber data fetched directly:", subscriberData);
+      if (!sessionCheck?.session) {
+        throw new Error("No valid session found");
       }
 
-      // Get from job_posting_limits table
-      const { data: limitsData, error: limitsError } = await supabase
-        .from('job_posting_limits')
-        .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
-        .eq('user_id', user.id)
-        .maybeSingle();
-        
-      if (limitsError) {
-        console.error('Error fetching limits data:', limitsError);
-        setDataFetchError(prev => prev ? `${prev}, Limits error: ${limitsError.message}` : `Limits error: ${limitsError.message}`);
-      } else {
-        console.log("Limits data fetched:", limitsData);
-      }
+      console.log("useSubscriptionFeatures: Session is valid, proceeding with queries");
 
-      // If no subscriber data or subscription has expired, check with Stripe edge function
-      // Only do this check once every 30 seconds to reduce load
-      const shouldCheckWithStripe = 
-        (!subscriberData || !subscriberData?.subscribed || 
-        (subscriberData?.subscription_end && new Date(subscriberData.subscription_end) < new Date())) &&
-        (now - lastRefreshTime > 30000);
-        
-      if (shouldCheckWithStripe) {
-        console.log("Checking subscription status via edge function");
-        
-        try {
-          // Call our edge function to check subscription status directly with Stripe
-          const { data: stripeData, error: stripeError } = await supabase.functions.invoke('check-subscription', {
-            body: { 
-              timestamp: now,
-              cache_buster: cacheBuster,
-              force_fresh: true
-            }
-          });
-          
-          if (stripeError) {
-            console.error('Error checking subscription with Stripe:', stripeError);
-            setDataFetchError(prev => prev ? `${prev}, Stripe error: ${stripeError.message}` : `Stripe error: ${stripeError.message}`);
-          } else if (stripeData) {
-            console.log("Stripe subscription check result:", stripeData);
-          }
-        } catch (stripeCheckError) {
-          console.error('Exception during Stripe subscription check:', stripeCheckError);
-          setDataFetchError(prev => prev ? `${prev}, Stripe exception: ${String(stripeCheckError)}` : `Stripe exception: ${String(stripeCheckError)}`);
-        }
-        
-        // Try fetching subscriber data again after the edge function updates
-        // Make sure we include stripe_customer_id field in the SELECT query this time
-        const { data: refreshedData, error: refreshError } = await supabase
+      // Fetch subscriber data with error handling
+      let subscriberData = null;
+      try {
+        const { data, error } = await supabase
           .from('subscribers')
           .select('subscription_tier, subscribed, subscription_end, updated_at, subscription_id, stripe_customer_id')
           .eq('user_id', user.id)
           .maybeSingle();
           
-        if (refreshError) {
-          console.error('Error fetching refreshed subscriber data:', refreshError);
-        } else if (refreshedData) {
-          console.log("Refreshed subscriber data:", refreshedData);
-          // Use the refreshed data if available
-          subscriberData = refreshedData;
+        if (error) {
+          console.error('useSubscriptionFeatures: Subscribers table error:', error);
+          setDataFetchError(`Subscribers table error: ${error.message}`);
+        } else {
+          subscriberData = data;
+          console.log("useSubscriptionFeatures: Subscriber data:", subscriberData);
         }
+      } catch (err) {
+        console.error('useSubscriptionFeatures: Exception fetching subscribers:', err);
+        setDataFetchError(`Subscribers fetch exception: ${String(err)}`);
       }
 
-      // Determine active subscription status
+      // Fetch limits data with error handling
+      let limitsData = null;
+      try {
+        const { data, error } = await supabase
+          .from('job_posting_limits')
+          .select('monthly_post_limit, monthly_posts_used, subscription_tier, current_period_end')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (error) {
+          console.error('useSubscriptionFeatures: Limits table error:', error);
+          setDataFetchError(prev => prev ? `${prev}, Limits error: ${error.message}` : `Limits error: ${error.message}`);
+        } else {
+          limitsData = data;
+          console.log("useSubscriptionFeatures: Limits data:", limitsData);
+        }
+      } catch (err) {
+        console.error('useSubscriptionFeatures: Exception fetching limits:', err);
+        setDataFetchError(prev => prev ? `${prev}, Limits exception: ${String(err)}` : `Limits exception: ${String(err)}`);
+      }
+
+      // Determine features based on fetched data
       let isActive = subscriberData?.subscribed || false;
-      
-      // Get tier from subscriber data if available, otherwise from limits data
       let tier: SubscriptionTier = 'free';
+      
       if (subscriberData?.subscription_tier) {
         tier = subscriberData.subscription_tier as SubscriptionTier;
       } else if (limitsData?.subscription_tier) {
         tier = limitsData.subscription_tier as SubscriptionTier;
       }
       
-      // If subscription_end date is in the past, the subscription is no longer active
       const expiresAt = subscriberData?.subscription_end ? new Date(subscriberData.subscription_end) : null;
       if (expiresAt && expiresAt < new Date()) {
-        console.log("Subscription expired at:", expiresAt);
+        console.log("useSubscriptionFeatures: Subscription expired at:", expiresAt);
         isActive = false;
-        // If a subscription is expired, reset to free tier
         if (tier !== 'free' && tier !== 'single') {
           tier = 'free';
         }
       }
       
-      // Set default post limit based on tier
       let monthlyPostLimit = 1;
       if (tier === 'basic') monthlyPostLimit = 5;
       else if (tier === 'standard') monthlyPostLimit = 15;
-      else if (tier === 'premium') monthlyPostLimit = 999; // Effectively unlimited
+      else if (tier === 'premium') monthlyPostLimit = 999;
       else if (tier === 'single') monthlyPostLimit = 1;
 
-      // If we have explicit limits data, use that limit instead
       if (limitsData?.monthly_post_limit) {
         monthlyPostLimit = limitsData.monthly_post_limit;
       }
 
-      // Get correct monthly posts used value
       const monthlyPostsUsed = limitsData?.monthly_posts_used || 0;
 
-      // Only update features if they've actually changed to prevent unnecessary renders
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
         expiresAt,
         monthlyPostLimit,
         monthlyPostsUsed,
-        // Basic tier and above has basic stats
         hasBasicStats: isActive && (tier === 'basic' || tier === 'standard' || tier === 'premium'),
-        // Standard and Premium tiers have job view statistics
         hasJobViewStats: isActive && (tier === 'standard' || tier === 'premium'),
-        // Only Premium tier has advanced stats
         hasAdvancedStats: isActive && tier === 'premium',
-        // Only Premium can boost posts
         canBoostPosts: isActive && tier === 'premium',
-        // Only Premium has priority support
         hasPrioritySupport: isActive && tier === 'premium'
       };
 
-      // Only update state if something actually changed
-      if (JSON.stringify(features) !== JSON.stringify(updatedFeatures)) {
-        console.log("Setting updated features:", updatedFeatures);
-        setFeatures(updatedFeatures);
-      } else {
-        console.log("Features unchanged, skipping update");
-      }
-      
+      console.log("useSubscriptionFeatures: Final features:", updatedFeatures);
+      setFeatures(updatedFeatures);
       setLoading(false);
+      
     } catch (error) {
-      console.error('Error in useSubscriptionFeatures:', error);
-      setDataFetchError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-      // Even with errors, still try to provide default features
+      console.error('useSubscriptionFeatures: Major error:', error);
+      setDataFetchError(`Major error: ${error instanceof Error ? error.message : String(error)}`);
       setFeatures(prev => ({
         ...prev,
         isActive: false,
@@ -272,33 +175,12 @@ export const useSubscriptionFeatures = () => {
       }));
       setLoading(false);
     }
-  }, [user?.id, user?.email, lastQueryTime, lastRefreshTime, features]);
+  }, [user?.id, user?.email]);
 
-  // Initial fetch and refresh mechanism
   useEffect(() => {
+    console.log("useSubscriptionFeatures: Effect triggered, user:", user?.id);
     fetchSubscriptionFeatures();
   }, [fetchSubscriptionFeatures, refreshTrigger]);
-
-  // Set up periodic refresh every 120 seconds (increased from 60 to reduce strain)
-  useEffect(() => {
-    if (!user?.id) return;
-    
-    const intervalId = setInterval(() => {
-      console.log("Running periodic subscription check");
-      fetchSubscriptionFeatures();
-    }, 120000); // Check every 120 seconds instead of 60
-    
-    return () => clearInterval(intervalId);
-  }, [user?.id, fetchSubscriptionFeatures]);
-
-  // Add a special effect to refresh subscription data when the component mounts
-  // and when the user changes
-  useEffect(() => {
-    if (user?.id) {
-      console.log("User changed or component mounted, refreshing subscription");
-      fetchSubscriptionFeatures();
-    }
-  }, [user?.id, fetchSubscriptionFeatures]);
 
   return { features, loading, dataFetchError, refreshSubscription };
 };

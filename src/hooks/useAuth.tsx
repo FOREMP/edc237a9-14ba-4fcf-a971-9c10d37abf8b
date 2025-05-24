@@ -16,35 +16,40 @@ export const useAuth = () => {
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
   const [authInitialized, setAuthInitialized] = useState<boolean>(false);
-  const [lastSessionCheck, setLastSessionCheck] = useState<number>(0);
   
-  // Use refs to track last auth check time to prevent rapid re-authentication
-  const lastAuthCheckRef = useRef<number>(0);
-  const minAuthCheckInterval = 1000; // Minimum time between auth checks in ms
-  const authOperationInProgress = useRef<boolean>(false);
+  const authInProgressRef = useRef<boolean>(false);
+  const lastAuthEventRef = useRef<string>("");
+  const authEventCountRef = useRef<number>(0);
 
-  // Load user preferences
+  console.log("useAuth: Current state:", {
+    isAuthenticated,
+    isLoading,
+    isAdmin,
+    isCompany,
+    adminCheckComplete,
+    authInitialized,
+    userEmail: user?.email,
+    authInProgress: authInProgressRef.current
+  });
+
   const loadUserPreferences = async () => {
-    if (!isAuthenticated || !user?.id) {
-      setPreferencesLoading(false);
+    if (!isAuthenticated || !user?.id || preferencesLoading === false) {
       return;
     }
     
-    if (preferencesLoading) {
-      try {
-        const prefs = await authService.getUserPreferences();
-        if (prefs) {
-          setPreferences(prefs);
-        }
-      } catch (error) {
-        console.error("Error loading user preferences:", error);
-      } finally {
-        setPreferencesLoading(false);
+    try {
+      console.log("useAuth: Loading user preferences for:", user.id);
+      const prefs = await authService.getUserPreferences();
+      if (prefs) {
+        setPreferences(prefs);
       }
+    } catch (error) {
+      console.error("useAuth: Error loading user preferences:", error);
+    } finally {
+      setPreferencesLoading(false);
     }
   };
 
-  // Update user preferences
   const updatePreferences = async (newPreferences: Partial<UserPreferences>) => {
     if (!isAuthenticated) return false;
     
@@ -55,58 +60,42 @@ export const useAuth = () => {
       }
       return success;
     } catch (error) {
-      console.error("Error updating preferences:", error);
+      console.error("useAuth: Error updating preferences:", error);
       return false;
     }
   };
 
-  // Dismiss approval process notification permanently
   const dismissApprovalProcess = async () => {
     return await updatePreferences({ approvalProcessDismissed: true });
   };
 
-  // Force refresh the session to ensure we have fresh tokens
   const forceSessionRefresh = useCallback(async () => {
     try {
-      console.log("Forcing session refresh...");
-      const now = Date.now();
-      
-      // Don't refresh too frequently
-      if (now - lastSessionCheck < 5000) {
-        console.log("Session refresh skipped - too recent");
-        return;
-      }
-      
-      setLastSessionCheck(now);
-      
-      // Try to refresh the session
+      console.log("useAuth: Force refreshing session");
       const { data, error } = await supabase.auth.refreshSession();
       
       if (error) {
-        console.error("Session refresh failed:", error);
+        console.error("useAuth: Session refresh failed:", error);
         return false;
       }
       
-      console.log("Session refreshed successfully");
+      console.log("useAuth: Session refreshed successfully");
       return !!data.session;
     } catch (err) {
-      console.error("Error during session refresh:", err);
+      console.error("useAuth: Error during session refresh:", err);
       return false;
     }
-  }, [lastSessionCheck]);
+  }, []);
 
-  // Perform a complete admin check against both email and database role
   const performAdminCheck = useCallback(async (currentUser: User) => {
     if (!currentUser) return false;
     
     try {
-      // First check if email is in admin list - fastest check
       const isSpecialAdmin = isAdminEmail(currentUser.email);
       if (isSpecialAdmin) {
         return true;
       }
 
-      // If not in admin list, verify database role
       const { data: profileData } = await supabase
         .from('profiles')
         .select('role, email')
@@ -116,19 +105,18 @@ export const useAuth = () => {
       const dbRole = profileData?.role;
       const dbEmail = profileData?.email;
       
-      // Check both role and email in database
       const isDbAdmin = (dbRole === 'admin') || (dbEmail && isAdminEmail(dbEmail));
       
       return isDbAdmin || isSpecialAdmin;
     } catch (error) {
-      console.error("Error checking admin status:", error);
+      console.error("useAuth: Error checking admin status:", error);
       return false;
     }
   }, []);
 
-  // Set user data with correct admin status
   const setUserWithAdminCheck = useCallback(async (userData: User | null) => {
     if (!userData) {
+      console.log("useAuth: Clearing user data");
       setUser(null);
       setIsAdmin(false);
       setIsCompany(false);
@@ -136,41 +124,29 @@ export const useAuth = () => {
       return;
     }
     
-    // Check admin status directly from email first (synchronous check)
-    const isSpecialAdmin = isAdminEmail(userData.email);
+    console.log("useAuth: Setting user with admin check:", userData.email);
     
-    // Explicitly type the role as UserRole to prevent narrow inference
+    const isSpecialAdmin = isAdminEmail(userData.email);
     const userRole = userData.role as UserRole;
     
-    // Set initial user state with synchronous admin check
     setUser({
       ...userData,
-      // If email is in admin list, ensure role reflects that
       role: isSpecialAdmin ? ('admin' as UserRole) : userRole
     });
     
-    // Set initial admin/company state based on synchronous check
-    // Use explicit type assertion to prevent narrow type inference
-    setIsAdmin(isSpecialAdmin || userRole === ('admin' as UserRole));
-    
-    // Explicit role check for company status using the typed userRole
+    const isUserAdmin = isSpecialAdmin || userRole === ('admin' as UserRole);
+    setIsAdmin(isUserAdmin);
     setIsCompany(userRole === ('company' as UserRole) && !isSpecialAdmin && userRole !== ('admin' as UserRole));
     
-    // Then do complete admin check against database - but only if needed
     if (!isSpecialAdmin && userRole !== ('admin' as UserRole)) {
-      const isUserAdmin = await performAdminCheck(userData);
+      const adminCheckResult = await performAdminCheck(userData);
+      setIsAdmin(adminCheckResult);
+      setIsCompany(!adminCheckResult && userRole === ('company' as UserRole));
       
-      // Update admin status based on complete check
-      setIsAdmin(isUserAdmin);
-      
-      // Update company status based on complete check using typed role
-      setIsCompany(!isUserAdmin && userRole === ('company' as UserRole));
-      
-      // Update user object if needed
-      if (isUserAdmin && userRole !== ('admin' as UserRole)) {
+      if (adminCheckResult && userRole !== ('admin' as UserRole)) {
         setUser({
           ...userData,
-          role: 'admin' as UserRole // Ensure user object reflects admin role with explicit typing
+          role: 'admin' as UserRole
         });
       }
     }
@@ -178,159 +154,131 @@ export const useAuth = () => {
     setAdminCheckComplete(true);
   }, [performAdminCheck]);
 
-  // Handle auth state changes with rate limiting
   const handleAuthChange = useCallback(async (event: string, session: any) => {
-    console.log("Auth event triggered:", event);
+    console.log("useAuth: Auth event triggered:", event);
     
-    // Skip if another auth operation is in progress or if we've checked recently
-    const now = Date.now();
-    if (authOperationInProgress.current || (now - lastAuthCheckRef.current < minAuthCheckInterval)) {
-      console.log("Skipping auth check: too soon or already in progress");
+    // Prevent auth loops by tracking consecutive events
+    authEventCountRef.current += 1;
+    if (authEventCountRef.current > 10) {
+      console.warn("useAuth: Too many auth events, skipping to prevent loop");
       return;
     }
     
-    lastAuthCheckRef.current = now;
-    authOperationInProgress.current = true;
+    // Reset counter after a delay
+    setTimeout(() => {
+      authEventCountRef.current = 0;
+    }, 2000);
+    
+    if (authInProgressRef.current) {
+      console.log("useAuth: Auth operation in progress, skipping");
+      return;
+    }
+    
+    if (lastAuthEventRef.current === event && event === 'INITIAL_SESSION') {
+      console.log("useAuth: Duplicate INITIAL_SESSION event, skipping");
+      return;
+    }
+    
+    lastAuthEventRef.current = event;
+    authInProgressRef.current = true;
     
     try {
       if (session) {
-        console.log("Session found in auth event");
-        // Use setTimeout to defer the profile fetch to avoid potential deadlocks
-        setTimeout(async () => {
-          try {
-            // Only refresh session if we don't have active user data
-            if (!isAuthenticated || !user) {
-              console.log("Refreshing session data");
-              await authService.refreshSession(); // This will also fetch user profile
-              const currentUser = authService.getCurrentUser();
-              
-              if (currentUser) {
-                console.log("User found after refresh:", currentUser.email);
-                setIsAuthenticated(true);
-                await setUserWithAdminCheck(currentUser);
-              } else {
-                // No user data returned
-                console.log("No user data after refresh");
-                setIsAuthenticated(false);
-                setUser(null);
-                setIsAdmin(false);
-                setIsCompany(false);
-                setAdminCheckComplete(true);
-              }
-            }
-          } catch (error) {
-            console.error("Error refreshing session:", error);
-          } finally {
-            setIsLoading(false);
-            authOperationInProgress.current = false;
-          }
-        }, 0);
-      } else {
-        // Only clear auth state completely on explicit SIGNED_OUT event
-        if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-          console.log("User signed out or deleted");
-          setUser(null);
+        console.log("useAuth: Session found in auth event");
+        
+        const currentUser = authService.getCurrentUser();
+        if (currentUser) {
+          console.log("useAuth: User found:", currentUser.email);
+          setIsAuthenticated(true);
+          await setUserWithAdminCheck(currentUser);
+        } else {
+          console.log("useAuth: No user data after auth event");
           setIsAuthenticated(false);
-          setIsAdmin(false);
-          setIsCompany(false);
-          setAdminCheckComplete(true);
+          await setUserWithAdminCheck(null);
         }
-        setIsLoading(false);
-        authOperationInProgress.current = false;
+      } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        console.log("useAuth: User signed out or deleted");
+        setIsAuthenticated(false);
+        await setUserWithAdminCheck(null);
       }
     } catch (error) {
-      console.error("Error handling auth change:", error);
-      authOperationInProgress.current = false;
+      console.error("useAuth: Error handling auth change:", error);
+    } finally {
       setIsLoading(false);
+      authInProgressRef.current = false;
     }
-  }, [isAuthenticated, user, setUserWithAdminCheck]);
+  }, [setUserWithAdminCheck]);
 
-  // Initial auth setup
   useEffect(() => {
-    // Skip if we've already initialized
     if (authInitialized) return;
     
     let mounted = true;
+    console.log("useAuth: Initializing auth");
     setIsLoading(true);
     setAdminCheckComplete(false);
+    authInProgressRef.current = true;
     
-    // Setup auth listener first before checking current session
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (mounted) {
         handleAuthChange(event, session);
       }
     });
     
-    // Check current session state
     const initializeAuth = async () => {
-      authOperationInProgress.current = true;
       try {
         const sessionResult = await supabase.auth.getSession();
+        console.log("useAuth: Initial session check:", !!sessionResult?.data?.session);
         
         if (sessionResult?.data?.session) {
-          try {
-            await authService.refreshSession(); // This refreshes the session and fetches user profile
-            const currentUser = authService.getCurrentUser();
-            const authState = authService.isUserAuthenticated();
-            
-            // If user is logged in, set authentication state and user data
-            if (currentUser && authState) {
-              setIsAuthenticated(true);
-              await setUserWithAdminCheck(currentUser);
-            } else {
-              // No authenticated user
-              setIsAuthenticated(false);
-              setUser(null);
-              setIsAdmin(false);
-              setIsCompany(false);
-              setAdminCheckComplete(true);
-            }
-          } catch (error) {
-            console.error("Error refreshing session:", error);
+          const currentUser = authService.getCurrentUser();
+          const authState = authService.isUserAuthenticated();
+          
+          if (currentUser && authState) {
+            console.log("useAuth: Found authenticated user:", currentUser.email);
+            setIsAuthenticated(true);
+            await setUserWithAdminCheck(currentUser);
+          } else {
+            console.log("useAuth: No authenticated user found");
             setIsAuthenticated(false);
-            setAdminCheckComplete(true);
+            await setUserWithAdminCheck(null);
           }
         } else {
-          // No session found
+          console.log("useAuth: No session found");
           setIsAuthenticated(false);
-          setUser(null);
-          setIsAdmin(false);
-          setIsCompany(false);
-          setAdminCheckComplete(true);
+          await setUserWithAdminCheck(null);
         }
         
-        // Mark auth as initialized to prevent re-initialization
         setAuthInitialized(true);
       } catch (error) {
-        console.error("Error initializing auth:", error);
+        console.error("useAuth: Error initializing auth:", error);
+        setIsAuthenticated(false);
+        setAdminCheckComplete(true);
       } finally {
         if (mounted) {
           setIsLoading(false);
-          authOperationInProgress.current = false;
+          authInProgressRef.current = false;
         }
       }
     };
     
     initializeAuth();
     
-    // Cleanup subscription on unmount
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
   }, [setUserWithAdminCheck, handleAuthChange, authInitialized]);
 
-  // Load preferences when auth status changes
   useEffect(() => {
-    if (!isLoading && isAuthenticated && user?.id) {
+    if (!isLoading && isAuthenticated && user?.id && preferencesLoading) {
       loadUserPreferences();
     }
-  }, [isAuthenticated, isLoading, user?.id]);
+  }, [isAuthenticated, isLoading, user?.id, preferencesLoading]);
 
   return {
     user,
     isAuthenticated,
-    isLoading: isLoading || !adminCheckComplete, // Only consider loaded when admin check is done
+    isLoading: isLoading || !adminCheckComplete,
     isAdmin,
     isCompany,
     preferences,

@@ -4,294 +4,124 @@ import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { Loader2Icon, AlertTriangle, Bug, Database, RefreshCw } from "lucide-react";
-import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import ApprovalProcessBanner from "@/components/dashboard/ApprovalProcessBanner";
-import JobDialogs from "@/components/dashboard/JobDialogs";
-import DashboardTabs from "@/components/dashboard/DashboardTabs";
-import { useDashboardJobs } from "@/hooks/useDashboardJobs";
-import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
-import { toast } from "sonner";
-import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
-import StatisticsCard from "@/components/dashboard/StatisticsCard";
-import { useSubscriptionFeatures } from "@/hooks/useSubscriptionFeatures";
 import { supabase, diagCompanyAccess } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
-  const { isAuthenticated, isLoading: authLoading, isAdmin, preferences, dismissApprovalProcess, user, isCompany, adminCheckComplete } = useRequireAuth();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isAlertOpen, setIsAlertOpen] = useState(false);
-  const [jobToDelete, setJobToDelete] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("all");
-  const [showApprovalMessage, setShowApprovalMessage] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [profileData, setProfileData] = useState<any>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [debugMode, setDebugMode] = useState(true); // Set to true by default for troubleshooting
-  const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
-  const [runningDiagnosis, setRunningDiagnosis] = useState(false);
+  const { isAuthenticated, isLoading: authLoading, isAdmin, user, isCompany, adminCheckComplete } = useRequireAuth();
+  const [debugInfo, setDebugInfo] = useState<any>({});
+  const [sessionInfo, setSessionInfo] = useState<any>({});
+  const [isDebugging, setIsDebugging] = useState(false);
   const navigate = useNavigate();
 
-  // Use our custom hook for job management
-  const { jobs, isLoading: jobsLoading, createJob, deleteJob, refreshJobs, remainingJobs } = useDashboardJobs(activeTab);
-  
-  // Use our subscription limits hook
-  const { checkPostingLimit } = useSubscriptionLimits();
-
-  // Use our subscription features hook - fix here: use "loading" instead of "isLoading"
-  const { features, loading: featuresLoading, refreshSubscription, dataFetchError } = useSubscriptionFeatures();
-
-  // Run diagnostics function to help troubleshoot RLS issues
-  const runDiagnostics = async () => {
-    setRunningDiagnosis(true);
+  // Debug session and authentication state
+  const runSessionCheck = async () => {
+    setIsDebugging(true);
     try {
-      const result = await diagCompanyAccess();
-      setDiagnosisResult(result);
-      console.log("Diagnosis result:", result);
+      console.log("=== SESSION DEBUG START ===");
       
-      if (result.error) {
-        toast.error(`Diagnosis found an error: ${result.error}`);
-      } else {
-        toast.success("Diagnosis completed");
+      // Check current session
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      console.log("Session check result:", { sessionData, sessionError });
+      
+      // Check current user
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      console.log("User check result:", { userData, userError });
+      
+      // Test basic query
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userData?.user?.id)
+          .single();
+        console.log("Profile query result:", { profileData, profileError });
+      } catch (profileErr) {
+        console.error("Profile query exception:", profileErr);
       }
+      
+      // Test jobs query
+      try {
+        const { data: jobsData, error: jobsError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('company_id', userData?.user?.id)
+          .limit(5);
+        console.log("Jobs query result:", { jobsData, jobsError });
+      } catch (jobsErr) {
+        console.error("Jobs query exception:", jobsErr);
+      }
+      
+      setSessionInfo({
+        session: sessionData?.session ? 'Valid' : 'Invalid',
+        user: userData?.user ? userData.user.email : 'No user',
+        userId: userData?.user?.id || 'No ID',
+        sessionError: sessionError?.message || 'None',
+        userError: userError?.message || 'None'
+      });
+      
+      setDebugInfo({
+        isAuthenticated,
+        isAdmin,
+        isCompany,
+        adminCheckComplete,
+        authLoading,
+        userRole: user?.role,
+        userEmail: user?.email
+      });
+      
+      console.log("=== SESSION DEBUG END ===");
     } catch (error) {
-      console.error("Error running diagnostics:", error);
-      setDiagnosisResult({ error: String(error) });
+      console.error("Session debug error:", error);
     } finally {
-      setRunningDiagnosis(false);
+      setIsDebugging(false);
     }
   };
 
-  // Verify profile access - debug for RLS issues
+  // Run session check on mount
   useEffect(() => {
-    if (!isAuthenticated || !user?.id || !isCompany) return;
-    
-    // Explicitly test profile access for company users
-    const testProfileAccess = async () => {
-      try {
-        console.log("Dashboard: Testing profile access for user", user.id);
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-        
-        if (error) {
-          console.error("RLS ERROR: Cannot access profile data:", error);
-          setProfileError(`Database permission error: ${error.message}`);
-          toast.error("Cannot load your profile data. This is likely an RLS permission issue.");
-          return;
-        }
-        
-        console.log("Dashboard: Successfully retrieved profile data:", data);
-        setProfileData(data);
-        
-        // Also check for preferences access
-        const { error: prefError } = await supabase
-          .from('user_preferences')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
-        if (prefError) {
-          console.error("RLS ERROR: Cannot access preferences:", prefError);
-          setProfileError(prev => prev ? `${prev} and preferences` : `Database permission error: ${prefError.message}`);
-        }
-        
-        // Test access to subscribers table
-        const { error: subError } = await supabase
-          .from('subscribers')
-          .select('id, email, subscribed, subscription_tier')
-          .eq('user_id', user.id)
-          .maybeSingle();
-          
-        if (subError) {
-          console.error("RLS ERROR: Cannot access subscribers:", subError);
-          setProfileError(prev => prev ? `${prev} and subscribers` : `Database permission error: ${subError.message}`);
-        }
-        
-        // Test access to job_posting_limits table
-        const { error: limitsError } = await supabase
-          .from('job_posting_limits')
-          .select('id, monthly_post_limit, monthly_posts_used')
-          .eq('user_id', user.id)
-          .maybeSingle();
-          
-        if (limitsError) {
-          console.error("RLS ERROR: Cannot access job_posting_limits:", limitsError);
-          setProfileError(prev => prev ? `${prev} and job_posting_limits` : `Database permission error: ${limitsError.message}`);
-        }
-        
-      } catch (err) {
-        console.error("Dashboard: Exception during profile check:", err);
-        setProfileError(`Error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    };
-    
-    testProfileAccess();
-  }, [isAuthenticated, user?.id, isCompany]);
+    runSessionCheck();
+  }, []);
 
-  // Set showApprovalMessage based on user preferences
+  // Log authentication state changes
   useEffect(() => {
-    if (preferences) {
-      setShowApprovalMessage(!preferences.approvalProcessDismissed);
-    }
-  }, [preferences]);
+    console.log("Dashboard auth state changed:", {
+      isAuthenticated,
+      isAdmin,
+      isCompany,
+      adminCheckComplete,
+      authLoading,
+      userRole: user?.role,
+      userEmail: user?.email
+    });
+  }, [isAuthenticated, isAdmin, isCompany, adminCheckComplete, authLoading, user]);
 
   // Redirect admin to admin dashboard
   useEffect(() => {
-    console.log("Dashboard auth check", { 
-      isAdmin, 
-      authLoading, 
-      adminCheckComplete,
-      isCompany,
-      role: user?.role 
-    });
-    
-    // Only redirect if auth check is complete and user is definitely an admin
     if (adminCheckComplete && !authLoading && isAdmin && user?.role === 'admin') {
       console.log("Redirecting admin to admin dashboard");
       navigate("/admin");
     }
   }, [isAdmin, authLoading, navigate, user, adminCheckComplete]);
 
-  // Enhanced logging for debugging company user issues
-  useEffect(() => {
-    console.log("Dashboard component user state:", {
-      isAuthenticated,
-      isLoading: authLoading,
-      adminCheckComplete,
-      isAdmin, 
-      isCompany,
-      role: user?.role,
-      email: user?.email,
-      hasPreferences: !!preferences,
-      hasFeatures: !!features,
-      loadError,
-      profileError,
-      hasProfileData: !!profileData,
-      dataFetchError
-    });
-    
-    // Check for potential rendering issues
-    if (adminCheckComplete && !authLoading && isAuthenticated && isCompany && user?.role === 'company') {
-      console.log("Company user should see dashboard now");
-    }
-  }, [
-    isAuthenticated, 
-    authLoading, 
-    isAdmin, 
-    isCompany, 
-    user, 
-    adminCheckComplete, 
-    preferences, 
-    features, 
-    loadError, 
-    profileData, 
-    profileError,
-    dataFetchError
-  ]);
-
-  const handleCreateJob = async (formData) => {
-    console.log("Starting job creation process");
-    
-    try {
-      // First check if the user has hit their posting limit
-      const canPost = await checkPostingLimit();
-      console.log("Check posting limit result:", canPost);
-      
-      if (!canPost) {
-        console.log("User has reached their posting limit");
-        toast.error("Du har nått din månatliga gräns för jobbannonser.");
-        return false;
-      }
-
-      // If they can post, create the job
-      const success = await createJob(formData);
-      if (success) {
-        setIsDialogOpen(false);
-        
-        // Toast notification with success message
-        toast.success("Jobbannonsen har skapats och väntar på godkännande.");
-      } else {
-        toast.error("Det gick inte att skapa jobbannonsen.");
-      }
-      return !!success;
-    } catch (error) {
-      console.error("Error in job creation:", error);
-      toast.error("Ett fel uppstod när jobbannonsen skulle skapas.");
-      return false;
-    }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!jobToDelete) return;
-    try {
-      await deleteJob(jobToDelete);
-      setJobToDelete(null);
-      setIsAlertOpen(false);
-      toast.success("Jobbannonsen har tagits bort.");
-    } catch (error) {
-      console.error("Error deleting job:", error);
-      toast.error("Det gick inte att ta bort jobbannonsen.");
-    }
-  };
-
-  const handleDeleteClick = (jobId) => {
-    setJobToDelete(jobId);
-    setIsAlertOpen(true);
-  };
-
-  const handleEditJob = (job) => {
-    navigate(`/dashboard/edit/${job.id}`);
-  };
-
-  const handleDismissApprovalMessage = async () => {
-    setShowApprovalMessage(false);
-    try {
-      const success = await dismissApprovalProcess();
-      if (!success) {
-        console.error("Failed to update user preferences");
-      }
-    } catch (error) {
-      console.error("Error dismissing approval message:", error);
-    }
-  };
-
-  // Show loading spinner while auth state is initializing or admin check is not complete
+  // Show loading spinner while auth state is initializing
   if (authLoading || !adminCheckComplete) {
     return (
       <Layout>
         <div className="flex justify-center items-center min-h-[50vh] flex-col">
           <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
           <p className="text-muted-foreground">Laddar användarinformation...</p>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Show error state if there's a loading error
-  if (loadError) {
-    return (
-      <Layout>
-        <div className="container mx-auto px-4 py-16">
-          <div className="flex justify-center items-center flex-col">
-            <AlertTriangle className="w-8 h-8 text-amber-500 mb-4" />
-            <p className="text-lg font-medium mb-2">Ett fel uppstod</p>
-            <p className="text-muted-foreground">{loadError}</p>
-            <button 
-              className="mt-4 text-primary hover:underline" 
-              onClick={() => window.location.reload()}
-            >
-              Försök igen
-            </button>
+          <div className="mt-4 text-sm text-gray-500">
+            <p>Auth Loading: {authLoading.toString()}</p>
+            <p>Admin Check Complete: {adminCheckComplete.toString()}</p>
+            <p>Is Authenticated: {isAuthenticated.toString()}</p>
           </div>
         </div>
       </Layout>
     );
   }
 
-  // Verify access before rendering dashboard content
+  // Not authenticated - redirect to login
   if (!isAuthenticated) {
     return (
       <Layout>
@@ -299,245 +129,103 @@ const Dashboard = () => {
           <div className="text-center">
             <h2 className="text-2xl font-bold mb-4">Åtkomst nekad</h2>
             <p className="mb-4">Du måste vara inloggad för att visa denna sida.</p>
+            <Button onClick={() => navigate("/auth")}>
+              Gå till inloggning
+            </Button>
           </div>
         </div>
       </Layout>
     );
   }
 
-  // Show RLS permission error if we detected one
-  if (isCompany && profileError) {
-    return (
-      <Layout>
-        <div className="container mx-auto px-4 py-16">
-          <div className="text-center">
-            <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-4">Databas åtkomst problem</h2>
-            <p className="mb-4">Du har inte åtkomst till profildata som behövs för att visa denna sida.</p>
-            <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-4 max-w-lg mx-auto">
-              <p className="text-amber-800 text-sm mb-2 font-medium">Teknisk information:</p>
-              <p className="text-amber-800 text-sm">{profileError}</p>
-              <p className="text-amber-800 text-sm mt-2">Detta är troligtvis ett RLS-policyfel i databasen.</p>
-            </div>
-            <div className="mt-6 flex justify-center gap-4">
-              <button 
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80" 
-                onClick={() => window.location.reload()}
-              >
-                Försök igen
-              </button>
-              <button 
-                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300" 
-                onClick={() => setDebugMode(!debugMode)}
-              >
-                {debugMode ? "Dölj" : "Visa"} teknisk info
-              </button>
-              <button 
-                className="px-4 py-2 bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200 flex items-center gap-1" 
-                onClick={runDiagnostics}
-                disabled={runningDiagnosis}
-              >
-                {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <Database size={16} />}
-                Kör diagnostik
-              </button>
-            </div>
-            {debugMode && (
-              <div className="mt-8 border border-slate-200 rounded-lg p-4 max-w-xl mx-auto bg-slate-50">
-                <h3 className="text-left font-medium mb-2">Debug Information</h3>
-                <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded">
-                  {JSON.stringify({
-                    userId: user?.id,
-                    email: user?.email,
-                    role: user?.role,
-                    isCompany,
-                    hasProfileAccess: !!profileData,
-                    error: profileError,
-                    dataFetchError
-                  }, null, 2)}
-                </pre>
-              </div>
-            )}
-            {diagnosisResult && (
-              <div className="mt-8 border border-slate-200 rounded-lg p-4 max-w-2xl mx-auto bg-slate-50">
-                <h3 className="text-left font-medium mb-2">Diagnosis Results</h3>
-                <pre className="text-left text-xs whitespace-pre-wrap overflow-auto p-2 bg-slate-100 rounded max-h-96">
-                  {JSON.stringify(diagnosisResult, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Company user dashboard - render this when user is a company
+  // Company user dashboard - simplified version for debugging
   if (isCompany || (!isAdmin && user?.role === 'company')) {
     console.log("Rendering company dashboard for user:", user?.email);
     
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
-          <DashboardHeader onCreateClick={() => setIsDialogOpen(true)} />
-
-          {showApprovalMessage && (
-            <ApprovalProcessBanner onDismiss={handleDismissApprovalMessage} />
-          )}
-
-          {dataFetchError && (
-            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex items-start">
-                <AlertTriangle className="text-amber-500 mr-3 mt-0.5" size={20} />
-                <div>
-                  <p className="font-medium">Subscription data error</p>
-                  <p className="text-sm text-amber-700">{dataFetchError}</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => refreshSubscription(true)}
-                    className="mt-2 text-xs flex items-center"
-                  >
-                    <RefreshCw size={14} className="mr-1" />
-                    Refresh subscription data
-                  </Button>
-                </div>
-              </div>
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+              <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard mounted successfully!</h2>
+              <p className="text-green-700">You are authenticated as a company user.</p>
             </div>
-          )}
+          </div>
 
-          {/* Debug Tools for Troubleshooting */}
-          {debugMode && (
-            <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-              <h3 className="font-medium text-lg mb-2 flex items-center">
+          {/* Debug Information */}
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-lg flex items-center">
                 <Bug className="mr-2 text-slate-500" size={20} />
-                Debug Tools
+                Debug Information
               </h3>
-              <div className="flex space-x-2 mb-2">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => refreshSubscription(true)}
-                >
-                  Refresh Subscription
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={refreshJobs}
-                >
-                  Refresh Jobs
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={runDiagnostics}
-                  disabled={runningDiagnosis}
-                >
-                  {runningDiagnosis ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
-                  Run Diagnostics
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    localStorage.removeItem('sb-zgcsgwlggvjvvshhhcmb-auth-token');
-                    window.location.reload();
-                  }}
-                >
-                  Clear Auth Cache
-                </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={runSessionCheck}
+                disabled={isDebugging}
+              >
+                {isDebugging ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <RefreshCw size={16} className="mr-1" />}
+                Refresh Debug Info
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-sm font-medium mb-2">Authentication State:</h4>
+                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-32">
+                  {JSON.stringify(debugInfo, null, 2)}
+                </pre>
               </div>
-              
-              <div className="grid grid-cols-1 gap-4 mt-4">
-                <div>
-                  <h4 className="text-sm font-medium mb-1">User and Auth State:</h4>
-                  <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
-                    {JSON.stringify({
-                      userId: user?.id,
-                      email: user?.email,
-                      role: user?.role,
-                      isCompany,
-                      isAdmin,
-                      adminCheckComplete,
-                      authLoading,
-                      isAuthenticated
-                    }, null, 2)}
-                  </pre>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Features and Subscription:</h4>
-                  <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-20">
-                    {JSON.stringify({
-                      ...features,
-                      featuresLoading,
-                      jobsLoading,
-                      dataFetchError
-                    }, null, 2)}
-                  </pre>
-                </div>
-                {diagnosisResult && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-1">Diagnosis Results:</h4>
-                    <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-40">
-                      {JSON.stringify(diagnosisResult, null, 2)}
-                    </pre>
-                  </div>
-                )}
+              <div>
+                <h4 className="text-sm font-medium mb-2">Session Information:</h4>
+                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-32">
+                  {JSON.stringify(sessionInfo, null, 2)}
+                </pre>
               </div>
             </div>
-          )}
-
-          {/* Subscription Status Card */}
-          <SubscriptionStatusCard 
-            features={features}
-            remainingJobs={remainingJobs}
-            refreshSubscription={refreshSubscription}
-          />
-
-          {/* Statistics Card */}
-          <div className="mb-8">
-            <StatisticsCard />
           </div>
 
-          <div className="mb-8">
-            <DashboardTabs 
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              jobs={jobs}
-              isLoading={jobsLoading}
-              handleEditJob={handleEditJob}
-              handleDeleteClick={handleDeleteClick}
-              onCreateClick={() => setIsDialogOpen(true)}
-            />
+          {/* User Information */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="font-medium text-lg mb-2">User Information</h3>
+            <div className="space-y-2 text-sm">
+              <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
+              <p><strong>Role:</strong> {user?.role || 'Not available'}</p>
+              <p><strong>User ID:</strong> {user?.id || 'Not available'}</p>
+              <p><strong>Is Company:</strong> {isCompany ? 'Yes' : 'No'}</p>
+              <p><strong>Is Admin:</strong> {isAdmin ? 'Yes' : 'No'}</p>
+            </div>
           </div>
 
-          <JobDialogs 
-            isDialogOpen={isDialogOpen}
-            isAlertOpen={isAlertOpen}
-            jobToDelete={jobToDelete}
-            setIsDialogOpen={setIsDialogOpen}
-            setIsAlertOpen={setIsAlertOpen}
-            handleCreateJob={handleCreateJob}
-            handleDeleteConfirm={handleDeleteConfirm}
-          />
-
-          {/* Toggle Debug Mode */}
-          <div className="text-center mt-16 text-sm text-slate-400">
-            <button 
-              onClick={() => setDebugMode(!debugMode)}
-              className="inline-flex items-center hover:text-slate-600 transition-colors"
+          {/* Navigation Buttons */}
+          <div className="flex space-x-4">
+            <Button onClick={() => navigate("/")}>
+              Hem
+            </Button>
+            <Button onClick={() => navigate("/jobs")}>
+              Jobb
+            </Button>
+            <Button onClick={() => navigate("/statistics")}>
+              Statistik
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => {
+                supabase.auth.signOut();
+                navigate("/auth");
+              }}
             >
-              <Bug size={16} className="mr-1" />
-              {debugMode ? "Hide" : "Show"} Debug Mode
-            </button>
+              Logga ut
+            </Button>
           </div>
         </div>
       </Layout>
     );
   }
 
-  // If we get here, user is authenticated but isn't a company or admin
-  // This is a fallback in case a user has no role assigned
+  // Fallback for users without proper role assignment
   return (
     <Layout>
       <div className="container mx-auto px-4 py-16">
@@ -546,13 +234,25 @@ const Dashboard = () => {
           <p className="mb-4">Din användarroll är inte konfigurerad. Kontakta administratören.</p>
           <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
             <p>Debug info: Authenticated but role detection failed.</p>
-            <p className="text-sm mt-2">User: {user ? JSON.stringify({
-              email: user.email,
-              role: user.role,
-              isCompany,
-              isAdmin
-            }, null, 2) : "No user data"}</p>
+            <div className="text-sm mt-2 text-left">
+              <pre>{JSON.stringify({
+                email: user?.email,
+                role: user?.role,
+                isCompany,
+                isAdmin,
+                adminCheckComplete,
+                authLoading
+              }, null, 2)}</pre>
+            </div>
           </div>
+          <Button 
+            className="mt-4"
+            onClick={runSessionCheck}
+            disabled={isDebugging}
+          >
+            {isDebugging ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
+            Run Debug Check
+          </Button>
         </div>
       </div>
     </Layout>
