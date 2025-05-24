@@ -4,85 +4,45 @@ import { useNavigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSubscriptionPlan } from "@/hooks/useSubscriptionPlan";
-import { Loader2Icon, Bug, RefreshCw } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { Loader2Icon } from "lucide-react";
+import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
+import JobList from "@/components/dashboard/JobList";
+import { useDashboardJobs } from "@/hooks/useDashboardJobs";
+import { Job } from "@/types";
 import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading: authLoading, isAdmin, user, isCompany, adminCheckComplete } = useRequireAuth();
   const { 
     tier, 
-    planName, 
-    status, 
     isActive, 
     loading: planLoading, 
-    refreshPlan, 
-    syncWithStripe,
-    error: planError,
-    getPlanDisplayName,
-    getPlanBadgeColor 
+    refreshPlan,
+    canCreateJob,
+    getUpgradeMessage
   } = useSubscriptionPlan();
-  const [debugInfo, setDebugInfo] = useState<any>({});
-  const [sessionInfo, setSessionInfo] = useState<any>({});
-  const [isDebugging, setIsDebugging] = useState(false);
   const [hasRendered, setHasRendered] = useState(false);
   const navigate = useNavigate();
+
+  const {
+    jobs,
+    isLoading: jobsLoading,
+    activeTab,
+    setActiveTab,
+    handleEdit,
+    handleDelete,
+    handleCreateJob,
+    isCreating
+  } = useDashboardJobs();
 
   // Track rendering to prevent infinite loops
   useEffect(() => {
     setHasRendered(true);
   }, []);
 
-  // Debug session and authentication state
-  const runSessionCheck = async () => {
-    setIsDebugging(true);
-    try {
-      console.log("=== DASHBOARD SESSION DEBUG START ===");
-      
-      // Check current session
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      console.log("Session check result:", { sessionData, sessionError });
-      
-      // Check current user
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      console.log("User check result:", { userData, userError });
-      
-      setSessionInfo({
-        session: sessionData?.session ? 'Valid' : 'Invalid',
-        user: userData?.user ? userData.user.email : 'No user',
-        userId: userData?.user?.id || 'No ID',
-        sessionError: sessionError?.message || 'None',
-        userError: userError?.message || 'None'
-      });
-      
-      setDebugInfo({
-        isAuthenticated,
-        isAdmin,
-        isCompany,
-        adminCheckComplete,
-        authLoading,
-        userRole: user?.role,
-        userEmail: user?.email,
-        subscriptionTier: tier,
-        subscriptionPlanName: planName,
-        subscriptionStatus: status,
-        subscriptionActive: isActive,
-        planLoading,
-        planError
-      });
-      
-      console.log("=== DASHBOARD SESSION DEBUG END ===");
-    } catch (error) {
-      console.error("Session debug error:", error);
-    } finally {
-      setIsDebugging(false);
-    }
-  };
-
-  // Redirect admin to admin dashboard - but only once
+  // Redirect admin to admin dashboard
   useEffect(() => {
     if (hasRendered && adminCheckComplete && !authLoading && isAdmin && user?.role === 'admin') {
-      console.log("Redirecting admin to admin dashboard");
       navigate("/admin", { replace: true });
     }
   }, [isAdmin, authLoading, navigate, user, adminCheckComplete, hasRendered]);
@@ -91,18 +51,8 @@ const Dashboard = () => {
   if (authLoading || !adminCheckComplete || !hasRendered || planLoading) {
     return (
       <Layout>
-        <div className="flex justify-center items-center min-h-[50vh] flex-col">
-          <Loader2Icon className="w-8 h-8 animate-spin text-primary mb-4" />
-          <p className="text-muted-foreground">Laddar dashboard...</p>
-          <div className="mt-4 text-sm text-gray-500">
-            <p>Auth Loading: {authLoading.toString()}</p>
-            <p>Admin Check Complete: {adminCheckComplete.toString()}</p>
-            <p>Is Authenticated: {isAuthenticated.toString()}</p>
-            <p>Plan Loading: {planLoading.toString()}</p>
-            <p>Current Tier: {tier}</p>
-            <p>Plan Name: {planName}</p>
-            <p>Status: {status}</p>
-          </div>
+        <div className="flex justify-center items-center min-h-[50vh]">
+          <Loader2Icon className="w-8 h-8 animate-spin text-primary" />
         </div>
       </Layout>
     );
@@ -127,125 +77,109 @@ const Dashboard = () => {
 
   // Company user dashboard
   if (isCompany || (!isAdmin && user?.role === 'company')) {
-    console.log("Rendering company dashboard for user:", user?.email, "with plan:", tier, "status:", status);
-    
     return (
       <Layout>
         <div className="container mx-auto px-4 py-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-4">Dashboard</h1>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-              <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard laddat!</h2>
-              <p className="text-green-700">
-                Du är inloggad som företagsanvändare med <strong>{getPlanDisplayName()}</strong> plan
-                {isActive ? ' (aktiv)' : ' (ej aktiv)'}
+          </div>
+
+          {/* Subscription Status */}
+          <SubscriptionStatusCard 
+            features={{
+              monthlyPostLimit: tier === 'premium' ? 999 : tier === 'standard' ? 15 : tier === 'basic' ? 5 : 1,
+              monthlyPostsUsed: jobs.filter(job => 
+                new Date(job.created_at).getMonth() === new Date().getMonth() &&
+                new Date(job.created_at).getFullYear() === new Date().getFullYear()
+              ).length,
+              hasBasicStats: tier !== 'free',
+              hasJobViewStats: tier === 'standard' || tier === 'premium',
+              hasAdvancedStats: tier === 'premium',
+              canBoostPosts: tier === 'premium',
+              hasPrioritySupport: tier === 'premium',
+              isActive,
+              tier,
+              planName: tier,
+              status: isActive ? 'active' : 'inactive',
+              expiresAt: null
+            }}
+            remainingJobs={null}
+            refreshSubscription={() => refreshPlan(true)}
+          />
+
+          {/* Feature Gates */}
+          {tier === 'free' && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <h3 className="font-medium text-amber-800 mb-2">Begränsad åtkomst</h3>
+              <p className="text-amber-700 mb-3">
+                Du har för närvarande ett gratis konto. Uppgradera för att få tillgång till jobbpublicering och fler funktioner.
               </p>
-            </div>
-          </div>
-
-          {/* Subscription Status with Real-time Plan Detection */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-medium text-lg mb-2">Prenumerationsstatus - Real-time</h3>
-            <div className="space-y-2 text-sm">
-              <p><strong>Plan:</strong> <span className={`px-2 py-1 rounded text-white text-xs ${getPlanBadgeColor()}`}>{getPlanDisplayName()}</span></p>
-              <p><strong>Status:</strong> <span className={`px-2 py-1 rounded text-xs ${isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                {status === 'active' ? 'Aktiv' : status === 'trialing' ? 'Testperiod' : status === 'expired' ? 'Utgången' : 'Inaktiv'}
-              </span></p>
-              <p><strong>Plan Name:</strong> {planName}</p>
-              <p><strong>Tier:</strong> {tier}</p>
-              {planError && <p className="text-red-600"><strong>Fel:</strong> {planError}</p>}
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => refreshPlan(true)}
-                disabled={planLoading}
-              >
-                {planLoading ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <RefreshCw size={16} className="mr-1" />}
-                Force Refresh från Stripe
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => syncWithStripe(true)}
-              >
-                <RefreshCw size={16} className="mr-1" />
-                Sync med Stripe
+              <Button onClick={() => navigate('/pricing')}>
+                Uppgradera nu
               </Button>
             </div>
-          </div>
+          )}
 
-          {/* User Information */}
-          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-            <h3 className="font-medium text-lg mb-2">Användarinformation</h3>
-            <div className="space-y-2 text-sm">
-              <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
-              <p><strong>Role:</strong> {user?.role || 'Not available'}</p>
-              <p><strong>User ID:</strong> {user?.id || 'Not available'}</p>
-              <p><strong>Is Company:</strong> {isCompany ? 'Yes' : 'No'}</p>
-              <p><strong>Is Admin:</strong> {isAdmin ? 'Yes' : 'No'}</p>
-            </div>
-          </div>
-
-          {/* Debug Information */}
-          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium text-lg flex items-center">
-                <Bug className="mr-2 text-slate-500" size={20} />
-                Debug Information
-              </h3>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={runSessionCheck}
-                disabled={isDebugging}
-              >
-                {isDebugging ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <RefreshCw size={16} className="mr-1" />}
-                Refresh Debug Info
-              </Button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <h4 className="text-sm font-medium mb-2">Authentication State:</h4>
-                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-32">
-                  {JSON.stringify(debugInfo, null, 2)}
-                </pre>
+          {/* Job Management - Only for Standard and Premium */}
+          {(tier === 'standard' || tier === 'premium') && (
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Mina jobbannonser</h2>
+                {canCreateJob() ? (
+                  <Button onClick={handleCreateJob} disabled={isCreating}>
+                    {isCreating ? <Loader2Icon className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Skapa ny jobbannons
+                  </Button>
+                ) : (
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Du har nått din månadsgräns för jobbannonser
+                    </p>
+                    <Button onClick={() => navigate('/pricing')} variant="outline">
+                      Uppgradera plan
+                    </Button>
+                  </div>
+                )}
               </div>
-              <div>
-                <h4 className="text-sm font-medium mb-2">Session Information:</h4>
-                <pre className="text-xs bg-slate-100 p-2 rounded overflow-auto max-h-32">
-                  {JSON.stringify(sessionInfo, null, 2)}
-                </pre>
+
+              <JobList
+                jobs={jobs}
+                isLoading={jobsLoading}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onCreateClick={handleCreateJob}
+                tabValue={activeTab}
+              />
+            </div>
+          )}
+
+          {/* Basic users see job browsing only */}
+          {tier === 'basic' && (
+            <div className="text-center py-12">
+              <h2 className="text-2xl font-bold mb-4">Utforska lediga jobb</h2>
+              <p className="text-muted-foreground mb-6">
+                Med din Basic-plan kan du söka och ansöka om jobb. Uppgradera till Standard för att publicera egna jobbannonser.
+              </p>
+              <div className="flex gap-4 justify-center">
+                <Button onClick={() => navigate('/jobs')}>
+                  Bläddra bland jobb
+                </Button>
+                <Button onClick={() => navigate('/pricing')} variant="outline">
+                  Uppgradera plan
+                </Button>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Navigation Buttons */}
-          <div className="flex flex-wrap gap-4">
-            <Button onClick={() => navigate("/")}>
-              Hem
-            </Button>
-            <Button onClick={() => navigate("/jobs")}>
-              Jobb
-            </Button>
-            <Button onClick={() => navigate("/statistics")}>
-              Statistik
-            </Button>
-            <Button onClick={() => navigate("/pricing")}>
-              Prenumerationer
-            </Button>
-            <Button 
-              variant="outline"
-              onClick={() => {
-                supabase.auth.signOut();
-                navigate("/auth");
-              }}
-            >
-              Logga ut
-            </Button>
-          </div>
+          {/* Upgrade message for limited plans */}
+          {getUpgradeMessage() && (
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800">{getUpgradeMessage()}</p>
+              <Button onClick={() => navigate('/pricing')} className="mt-2" size="sm">
+                Uppgradera nu
+              </Button>
+            </div>
+          )}
         </div>
       </Layout>
     );
@@ -258,29 +192,6 @@ const Dashboard = () => {
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Välkommen!</h2>
           <p className="mb-4">Din användarroll är inte konfigurerad. Kontakta administratören.</p>
-          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
-            <p>Debug info: Authenticated but role detection failed.</p>
-            <div className="text-sm mt-2 text-left">
-              <pre>{JSON.stringify({
-                email: user?.email,
-                role: user?.role,
-                isCompany,
-                isAdmin,
-                adminCheckComplete,
-                authLoading,
-                subscriptionTier: tier,
-                subscriptionActive: isActive
-              }, null, 2)}</pre>
-            </div>
-          </div>
-          <Button 
-            className="mt-4"
-            onClick={runSessionCheck}
-            disabled={isDebugging}
-          >
-            {isDebugging ? <Loader2Icon size={16} className="animate-spin mr-1" /> : null}
-            Run Debug Check
-          </Button>
         </div>
       </div>
     </Layout>

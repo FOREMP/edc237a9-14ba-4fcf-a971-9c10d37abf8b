@@ -21,17 +21,29 @@ export const useAuth = () => {
   const lastAuthEventRef = useRef<string>("");
   const authEventCountRef = useRef<number>(0);
   const initializationAttempts = useRef<number>(0);
+  const lastSyncTimeRef = useRef<number>(0);
 
-  console.log("useAuth: Current state:", {
-    isAuthenticated,
-    isLoading,
-    isAdmin,
-    isCompany,
-    adminCheckComplete,
-    authInitialized,
-    userEmail: user?.email,
-    authInProgress: authInProgressRef.current
-  });
+  // Auto-sync with Stripe on login (with throttling)
+  const syncSubscriptionWithStripe = useCallback(async (userId: string) => {
+    const now = Date.now();
+    const timeSinceLastSync = now - lastSyncTimeRef.current;
+    
+    // Throttle sync calls to prevent spamming Stripe (minimum 30 seconds between calls)
+    if (timeSinceLastSync < 30000) {
+      return;
+    }
+    
+    lastSyncTimeRef.current = now;
+    
+    try {
+      await supabase.functions.invoke('check-subscription', {
+        body: { force_fresh: true }
+      });
+    } catch (error) {
+      // Silent failure - don't show errors to user for background sync
+      console.error("Background subscription sync failed:", error);
+    }
+  }, []);
 
   const loadUserPreferences = async () => {
     if (!isAuthenticated || !user?.id || preferencesLoading === false) {
@@ -39,7 +51,6 @@ export const useAuth = () => {
     }
     
     try {
-      console.log("useAuth: Loading user preferences for:", user.id);
       const prefs = await authService.getUserPreferences();
       if (prefs) {
         setPreferences(prefs);
@@ -72,7 +83,6 @@ export const useAuth = () => {
 
   const forceSessionRefresh = useCallback(async () => {
     try {
-      console.log("useAuth: Force refreshing session");
       const { data, error } = await supabase.auth.refreshSession();
       
       if (error) {
@@ -80,7 +90,6 @@ export const useAuth = () => {
         return false;
       }
       
-      console.log("useAuth: Session refreshed successfully");
       return !!data.session;
     } catch (err) {
       console.error("useAuth: Error during session refresh:", err);
@@ -117,15 +126,12 @@ export const useAuth = () => {
 
   const setUserWithAdminCheck = useCallback(async (userData: User | null) => {
     if (!userData) {
-      console.log("useAuth: Clearing user data");
       setUser(null);
       setIsAdmin(false);
       setIsCompany(false);
       setAdminCheckComplete(true);
       return;
     }
-    
-    console.log("useAuth: Setting user with admin check:", userData.email);
     
     const isSpecialAdmin = isAdminEmail(userData.email);
     const userRole = userData.role as UserRole;
@@ -153,15 +159,17 @@ export const useAuth = () => {
     }
     
     setAdminCheckComplete(true);
-  }, [performAdminCheck]);
+    
+    // Auto-sync subscription data when user logs in
+    if (userData.id) {
+      syncSubscriptionWithStripe(userData.id);
+    }
+  }, [performAdminCheck, syncSubscriptionWithStripe]);
 
   const handleAuthChange = useCallback(async (event: string, session: any) => {
-    console.log("useAuth: Auth event triggered:", event);
-    
     // Prevent auth loops by limiting rapid events
     authEventCountRef.current += 1;
     if (authEventCountRef.current > 20) {
-      console.warn("useAuth: Too many auth events, pausing to prevent loop");
       setTimeout(() => {
         authEventCountRef.current = 0;
       }, 5000);
@@ -174,13 +182,11 @@ export const useAuth = () => {
     }, 1000);
     
     if (authInProgressRef.current) {
-      console.log("useAuth: Auth operation in progress, skipping");
       return;
     }
     
     // Prevent duplicate INITIAL_SESSION events
     if (lastAuthEventRef.current === event && event === 'INITIAL_SESSION') {
-      console.log("useAuth: Duplicate INITIAL_SESSION event, skipping");
       return;
     }
     
@@ -189,20 +195,15 @@ export const useAuth = () => {
     
     try {
       if (session) {
-        console.log("useAuth: Session found in auth event");
-        
         const currentUser = authService.getCurrentUser();
         if (currentUser) {
-          console.log("useAuth: User found:", currentUser.email);
           setIsAuthenticated(true);
           await setUserWithAdminCheck(currentUser);
         } else {
-          console.log("useAuth: No user data after auth event");
           setIsAuthenticated(false);
           await setUserWithAdminCheck(null);
         }
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-        console.log("useAuth: User signed out or deleted");
         setIsAuthenticated(false);
         await setUserWithAdminCheck(null);
       }
@@ -220,14 +221,12 @@ export const useAuth = () => {
     // Prevent infinite initialization attempts
     initializationAttempts.current += 1;
     if (initializationAttempts.current > 3) {
-      console.warn("useAuth: Too many initialization attempts, stopping");
       setIsLoading(false);
       setAuthInitialized(true);
       return;
     }
     
     let mounted = true;
-    console.log("useAuth: Initializing auth (attempt", initializationAttempts.current, ")");
     setIsLoading(true);
     setAdminCheckComplete(false);
     authInProgressRef.current = true;
@@ -241,23 +240,19 @@ export const useAuth = () => {
     const initializeAuth = async () => {
       try {
         const sessionResult = await supabase.auth.getSession();
-        console.log("useAuth: Initial session check:", !!sessionResult?.data?.session);
         
         if (sessionResult?.data?.session) {
           const currentUser = authService.getCurrentUser();
           const authState = authService.isUserAuthenticated();
           
           if (currentUser && authState) {
-            console.log("useAuth: Found authenticated user:", currentUser.email);
             setIsAuthenticated(true);
             await setUserWithAdminCheck(currentUser);
           } else {
-            console.log("useAuth: No authenticated user found");
             setIsAuthenticated(false);
             await setUserWithAdminCheck(null);
           }
         } else {
-          console.log("useAuth: No session found");
           setIsAuthenticated(false);
           await setUserWithAdminCheck(null);
         }

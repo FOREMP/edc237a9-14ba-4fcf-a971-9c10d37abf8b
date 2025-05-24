@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Award, Loader2Icon, PieChart, Sparkles, RefreshCw } from "lucide-react";
+import { Award, Loader2Icon, PieChart, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,7 +19,6 @@ interface SubscriptionStatusCardProps {
 const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }: SubscriptionStatusCardProps) => {
   const navigate = useNavigate();
   const [isManagingSubscription, setIsManagingSubscription] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [portalUrl, setPortalUrl] = useState<string | null>(null);
 
   // Pre-fetch portal URL for better user experience
@@ -36,13 +35,12 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
         });
         
         if (error || !data?.url) {
-          console.error('Error pre-fetching portal URL:', error || 'No URL returned');
           return;
         }
         
         setPortalUrl(data.url);
       } catch (error) {
-        console.error('Error pre-fetching portal URL:', error);
+        // Silent failure for portal URL pre-fetch
       }
     };
     
@@ -62,7 +60,6 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   };
 
   const handleManageSubscription = async () => {
-    // If we already have the URL, use it directly for better UX
     if (portalUrl) {
       window.location.href = portalUrl;
       return;
@@ -70,9 +67,6 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
     
     setIsManagingSubscription(true);
     try {
-      toast.info("Ansluter till kundportalen...");
-      
-      // Add timestamp to ensure we recognize the return and prevent duplicate messages
       const timestamp = Date.now();
       const returnUrl = `${window.location.origin}/dashboard?subscription_updated=true&ts=${timestamp}`;
       
@@ -81,7 +75,6 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
       });
       
       if (error) {
-        console.error('Error accessing customer portal:', error);
         toast.error('Kunde inte öppna kundportalen. Försök igen senare.');
         return;
       }
@@ -90,33 +83,13 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
         window.location.href = data.url;
       } else if (data?.error) {
         toast.error(`Kunde inte öppna kundportalen: ${data.error}`);
-        console.error('Portal error:', data.error, data.details);
       } else {
         toast.error('Kunde inte hämta portallänk. Försök igen senare.');
       }
     } catch (error) {
-      console.error('Subscription management error:', error);
       toast.error('Ett fel uppstod. Försök igen senare.');
     } finally {
       setIsManagingSubscription(false);
-    }
-  };
-
-  const handleRefreshSubscription = async () => {
-    setIsRefreshing(true);
-    try {
-      toast.info("Uppdaterar prenumerationsstatus...");
-      refreshSubscription();
-      
-      // Set a timeout to ensure the UI reflects any changes
-      setTimeout(() => {
-        toast.success("Prenumerationsstatus uppdaterad");
-        setIsRefreshing(false);
-      }, 1500);
-    } catch (error) {
-      console.error('Refresh error:', error);
-      toast.error('Kunde inte uppdatera prenumerationsstatus');
-      setIsRefreshing(false);
     }
   };
 
@@ -128,11 +101,6 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
   // Determine if subscription is actually active
   const hasActiveSubscription = features.isActive && ['basic', 'standard', 'premium', 'single'].includes(features.tier);
 
-  // Force a refresh when this component mounts
-  useEffect(() => {
-    refreshSubscription();
-  }, [refreshSubscription]);
-
   return (
     <Card className="mb-8">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -140,29 +108,13 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
           <CardTitle className="text-xl">Ditt abonnemang</CardTitle>
           <CardDescription>Hantera din prenumeration och se dina förmåner</CardDescription>
         </div>
-        <div className="flex items-center gap-2">
-          <Button 
-            size="icon"
-            variant="outline"
-            className="h-8 w-8"
-            onClick={handleRefreshSubscription}
-            disabled={isRefreshing}
-            title="Uppdatera prenumerationsstatus"
-          >
-            {isRefreshing ? (
-              <Loader2Icon className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-          </Button>
-          <Badge className={getPlanBadgeColor(features.tier)}>
-            {features.tier === 'free' ? 'Inget abonnemang' : 
-             features.tier === 'basic' ? 'Bas' :
-             features.tier === 'standard' ? 'Standard' :
-             features.tier === 'premium' ? 'Premium' : 
-             features.tier === 'single' ? 'Enstaka annons' : 'Okänd plan'}
-          </Badge>
-        </div>
+        <Badge className={getPlanBadgeColor(features.tier)}>
+          {features.tier === 'free' ? 'Gratis' : 
+           features.tier === 'basic' ? 'Basic' :
+           features.tier === 'standard' ? 'Standard' :
+           features.tier === 'premium' ? 'Premium' : 
+           features.tier === 'single' ? 'Enstaka annons' : 'Okänd plan'}
+        </Badge>
       </CardHeader>
       <CardContent>
         <div className="grid md:grid-cols-3 gap-4 mb-4">
@@ -193,7 +145,7 @@ const SubscriptionStatusCard = ({ features, remainingJobs, refreshSubscription }
                   <PieChart className="h-4 w-4 mr-1" /> Visningsstatistik
                 </span>
               ) : (
-                <span className="text-muted-foreground">Ej tillgängligt</span>
+                <span className="text-muted-foreground">Grundläggande</span>
               )}
             </div>
           </div>

@@ -19,13 +19,18 @@ export interface PlanFeatures {
   canAccessAdvancedStatistics: boolean;
   canBoostPosts: boolean;
   hasPrioritySupport: boolean;
+  canViewJobs: boolean;
+  canApplyToJobs: boolean;
+  canPostJobs: boolean;
+  canViewApplicants: boolean;
+  canFilterApplicants: boolean;
+  canContactApplicants: boolean;
+  hasPriorityListing: boolean;
   expiresAt: Date | null;
 }
 
 export const useSubscriptionPlan = () => {
   const { features, loading, dataFetchError, refreshSubscription, syncWithStripe } = useSubscriptionFeatures();
-
-  console.log("useSubscriptionPlan: Current features:", features);
 
   const planFeatures: PlanFeatures = {
     tier: features.tier,
@@ -45,37 +50,43 @@ export const useSubscriptionPlan = () => {
     canAccessAdvancedStatistics: features.hasAdvancedStats,
     canBoostPosts: features.canBoostPosts,
     hasPrioritySupport: features.hasPrioritySupport,
+    
+    // Feature gating based on subscription tier
+    canViewJobs: true, // All users can view jobs
+    canApplyToJobs: true, // All users can apply to jobs
+    canPostJobs: features.tier === 'standard' || features.tier === 'premium' || features.tier === 'single',
+    canViewApplicants: features.tier === 'standard' || features.tier === 'premium',
+    canFilterApplicants: features.tier === 'premium',
+    canContactApplicants: features.tier === 'standard' || features.tier === 'premium',
+    hasPriorityListing: features.tier === 'premium',
+    
     expiresAt: features.expiresAt
   };
 
   const canCreateJob = () => {
+    if (!planFeatures.canPostJobs) return false;
     if (planFeatures.hasUnlimitedPosts) return true;
     return planFeatures.remainingPosts > 0;
   };
 
   const getUpgradeMessage = () => {
     if (planFeatures.isFree) {
-      return "Upgrade to Basic for 5 posts per month and basic statistics";
+      return "Uppgradera till Basic för att söka jobb, eller Standard för att publicera jobbannonser";
     }
     if (planFeatures.isBasic) {
-      return "Upgrade to Standard for 15 posts per month and viewing statistics";
+      return "Uppgradera till Standard för att publicera jobbannonser och hantera sökanden";
     }
     if (planFeatures.isStandard) {
-      return "Upgrade to Premium for unlimited posts and advanced features";
+      return "Uppgradera till Premium för obegränsade jobbannonser och avancerade funktioner";
     }
     return null;
   };
 
   const refreshPlan = (forceRefresh = false) => {
-    console.log("Refreshing plan data, force:", forceRefresh);
     if (forceRefresh) {
-      // First sync with Stripe to get latest data
       syncWithStripe(true).then(() => {
-        // Then refresh local data
         refreshSubscription(true);
-      }).catch(error => {
-        console.error("Error syncing with Stripe:", error);
-        // Still try to refresh local data
+      }).catch(() => {
         refreshSubscription(true);
       });
     } else {
@@ -85,7 +96,7 @@ export const useSubscriptionPlan = () => {
 
   const getPlanDisplayName = () => {
     switch (planFeatures.tier) {
-      case 'basic': return 'Bas';
+      case 'basic': return 'Basic';
       case 'standard': return 'Standard';
       case 'premium': return 'Premium';
       case 'single': return 'Enstaka annons';
@@ -102,8 +113,6 @@ export const useSubscriptionPlan = () => {
       default: return 'bg-gray-500 hover:bg-gray-600';
     }
   };
-
-  console.log("useSubscriptionPlan: Returning plan features:", planFeatures);
 
   return {
     ...planFeatures,
