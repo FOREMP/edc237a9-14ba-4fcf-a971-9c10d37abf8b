@@ -54,7 +54,7 @@ export const useSubscriptionPlan = () => {
     // Feature gating based on subscription tier
     canViewJobs: true, // All users can view jobs
     canApplyToJobs: true, // All users can apply to jobs
-    canPostJobs: features.tier === 'standard' || features.tier === 'premium' || features.tier === 'single',
+    canPostJobs: features.tier === 'basic' || features.tier === 'standard' || features.tier === 'premium' || features.tier === 'single',
     canViewApplicants: features.tier === 'standard' || features.tier === 'premium',
     canFilterApplicants: features.tier === 'premium',
     canContactApplicants: features.tier === 'standard' || features.tier === 'premium',
@@ -71,12 +71,12 @@ export const useSubscriptionPlan = () => {
 
   const getUpgradeMessage = () => {
     if (planFeatures.isFree) {
-      return "Uppgradera till Basic för att söka jobb, eller Standard för att publicera jobbannonser";
+      return "Uppgradera till Basic för att publicera jobbannonser (5 per månad)";
     }
-    if (planFeatures.isBasic) {
-      return "Uppgradera till Standard för att publicera jobbannonser och hantera sökanden";
+    if (planFeatures.isBasic && planFeatures.remainingPosts === 0) {
+      return "Uppgradera till Standard för fler jobbannonser (15 per månad) och hantera sökanden";
     }
-    if (planFeatures.isStandard) {
+    if (planFeatures.isStandard && planFeatures.remainingPosts === 0) {
       return "Uppgradera till Premium för obegränsade jobbannonser och avancerade funktioner";
     }
     return null;

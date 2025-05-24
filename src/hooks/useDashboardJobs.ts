@@ -12,6 +12,9 @@ export const useDashboardJobs = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [isCreating, setIsCreating] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+  const [jobToDelete, setJobToDelete] = useState<string | null>(null);
   const { features, refreshSubscription } = useSubscriptionFeatures();
   const { incrementPostCount, checkPostingLimit, getRemainingJobSlots } = useSubscriptionLimits();
   const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
@@ -27,12 +30,12 @@ export const useDashboardJobs = () => {
         console.log("Fetching expired jobs");
         companyJobs = await jobsService.getExpiredJobs();
       } else {
-        // Hämta alla företagsjobb (non-expired by default)
+        // Fetch all company jobs (non-expired by default)
         companyJobs = await jobsService.getCompanyJobs();
         console.log("Fetched company jobs:", companyJobs);
       }
       
-      // Filtrera jobb baserat på aktiv flik
+      // Filter jobs based on active tab
       let filteredJobs = companyJobs;
       if (activeTab === "pending") {
         console.log("Filtering for pending jobs");
@@ -42,13 +45,11 @@ export const useDashboardJobs = () => {
       } else if (activeTab === "rejected") {
         filteredJobs = companyJobs.filter(job => job.status === "rejected");
       }
-      // For "expired" tab, we already fetched the right jobs
-      // For "all" tab, we include all non-expired jobs
       
       console.log("Filtered jobs for tab", activeTab, ":", filteredJobs);
       setJobs(filteredJobs);
       
-      // Hämta återstående jobbplatser från Supabase
+      // Get remaining job slots from Supabase
       const remaining = await getRemainingJobSlots();
       setRemainingJobs(remaining);
       console.log("Remaining job slots:", remaining);
@@ -64,7 +65,7 @@ export const useDashboardJobs = () => {
   const createJob = async (formData: JobFormData): Promise<boolean> => {
     try {
       console.log("Checking posting limit before creating job");
-      // Kontrollera först om användaren kan publicera (har inte nått gränsen)
+      // First check if user can post (hasn't reached limit)
       const canPost = await checkPostingLimit();
       if (!canPost) {
         console.log("User has reached their posting limit");
@@ -77,18 +78,21 @@ export const useDashboardJobs = () => {
       if (newJob) {
         console.log("Job created successfully:", newJob);
         
-        // Uppdatera jobblistan med det nya jobbet
+        // Update job list with the new job
         setJobs(prev => [newJob, ...prev]);
         
-        // Öka antalsräknaren och uppdatera prenumerationsdata
+        // Increment count and update subscription data
         const incrementResult = await incrementPostCount();
         console.log("Increment post count result:", incrementResult);
         
-        // Uppdatera återstående jobbplatser
+        // Update remaining job slots
         const remaining = await getRemainingJobSlots();
         setRemainingJobs(remaining);
         
-        // Signalera framgång
+        // Close the dialog
+        setIsDialogOpen(false);
+        
+        // Signal success
         toast.success("Jobbannonsen har skapats och väntar på godkännande.");
         return true;
       } else {
@@ -110,10 +114,10 @@ export const useDashboardJobs = () => {
         setJobs(prev => prev.filter(job => job.id !== jobId));
         toast.success("Jobbet har tagits bort");
         
-        // Uppdatera prenumerationsdata för att uppdatera UI om det behövs
+        // Update subscription data to refresh UI if needed
         refreshSubscription();
         
-        // Uppdatera återstående jobbplatser
+        // Update remaining job slots
         const remaining = await getRemainingJobSlots();
         setRemainingJobs(remaining);
         
@@ -133,8 +137,21 @@ export const useDashboardJobs = () => {
     navigate(`/edit-job/${job.id}`);
   };
 
-  const handleDelete = async (jobId: string) => {
-    await deleteJob(jobId);
+  const handleDelete = (jobId: string) => {
+    setJobToDelete(jobId);
+    setIsAlertOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (jobToDelete) {
+      await deleteJob(jobToDelete);
+      setJobToDelete(null);
+      setIsAlertOpen(false);
+    }
+  };
+
+  const handleCreateClick = () => {
+    setIsDialogOpen(true);
   };
 
   const handleCreateJob = async (formData: JobFormData) => {
@@ -159,7 +176,14 @@ export const useDashboardJobs = () => {
     handleEdit,
     handleDelete,
     handleCreateJob,
+    handleCreateClick,
+    handleDeleteConfirm,
     isCreating,
+    isDialogOpen,
+    setIsDialogOpen,
+    isAlertOpen,
+    setIsAlertOpen,
+    jobToDelete,
     createJob,
     deleteJob,
     refreshJobs: fetchJobs,

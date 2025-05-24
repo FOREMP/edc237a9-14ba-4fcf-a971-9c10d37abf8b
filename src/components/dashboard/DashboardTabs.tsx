@@ -32,7 +32,7 @@ const DashboardTabs = ({
         <TabsList className="mb-6 w-full justify-start">
           <TabsTrigger value="company" className={isMobile ? "text-xs" : ""}>Ditt företag</TabsTrigger>
           <TabsTrigger value="all" className={isMobile ? "text-xs" : ""}>Alla jobb</TabsTrigger>
-          <TabsTrigger value="pending" className={isMobile ? "text-xs" : ""}>Under granskning</TabsTrigger>
+          <TabsTrigger value="pending" className={isMobile ? "text-xs" : ""}>Väntar godkännande</TabsTrigger>
           <TabsTrigger value="approved" className={isMobile ? "text-xs" : ""}>Godkända</TabsTrigger>
           <TabsTrigger value="rejected" className={isMobile ? "text-xs" : ""}>Nekade</TabsTrigger>
           <TabsTrigger value="expired" className={isMobile ? "text-xs" : ""}>Utgångna</TabsTrigger>
@@ -44,7 +44,7 @@ const DashboardTabs = ({
       </TabsContent>
       
       <TabsContent value="all">
-        <h2 className="text-xl font-semibold mb-4">Dina jobbannonser</h2>
+        <h2 className="text-xl font-semibold mb-4">Alla dina jobbannonser</h2>
         <JobList 
           jobs={jobs}
           isLoading={isLoading}
@@ -55,24 +55,65 @@ const DashboardTabs = ({
         />
       </TabsContent>
       
-      {['pending', 'approved', 'rejected', 'expired'].map((status) => (
-        <TabsContent key={status} value={status}>
-          <h2 className="text-xl font-semibold mb-4">
-            {status === 'pending' ? 'Under granskning' : 
-             status === 'approved' ? 'Godkända' : 
-             status === 'rejected' ? 'Nekade' : 
-             'Utgångna'} annonser
-          </h2>
-          <JobList 
-            jobs={jobs}
-            isLoading={isLoading}
-            onEdit={handleEditJob}
-            onDelete={handleDeleteClick}
-            onCreateClick={onCreateClick}
-            tabValue={status}
-          />
-        </TabsContent>
-      ))}
+      <TabsContent value="pending">
+        <h2 className="text-xl font-semibold mb-4">Väntar på godkännande</h2>
+        <p className="text-muted-foreground mb-4">
+          Dessa jobbannonser har skickats in och väntar på att godkännas av en administratör.
+        </p>
+        <JobList 
+          jobs={jobs}
+          isLoading={isLoading}
+          onEdit={handleEditJob}
+          onDelete={handleDeleteClick}
+          onCreateClick={onCreateClick}
+          tabValue="pending"
+        />
+      </TabsContent>
+      
+      <TabsContent value="approved">
+        <h2 className="text-xl font-semibold mb-4">Godkända annonser</h2>
+        <p className="text-muted-foreground mb-4">
+          Dessa jobbannonser är publicerade och synliga för jobbsökare.
+        </p>
+        <JobList 
+          jobs={jobs}
+          isLoading={isLoading}
+          onEdit={handleEditJob}
+          onDelete={handleDeleteClick}
+          onCreateClick={onCreateClick}
+          tabValue="approved"
+        />
+      </TabsContent>
+      
+      <TabsContent value="rejected">
+        <h2 className="text-xl font-semibold mb-4">Nekade annonser</h2>
+        <p className="text-muted-foreground mb-4">
+          Dessa jobbannonser har nekats av en administratör. Du kan redigera och skicka in dem igen.
+        </p>
+        <JobList 
+          jobs={jobs}
+          isLoading={isLoading}
+          onEdit={handleEditJob}
+          onDelete={handleDeleteClick}
+          onCreateClick={onCreateClick}
+          tabValue="rejected"
+        />
+      </TabsContent>
+      
+      <TabsContent value="expired">
+        <h2 className="text-xl font-semibold mb-4">Utgångna annonser</h2>
+        <p className="text-muted-foreground mb-4">
+          Dessa jobbannonser har gått ut (30 dagar efter godkännande) och är inte längre synliga.
+        </p>
+        <JobList 
+          jobs={jobs}
+          isLoading={isLoading}
+          onEdit={handleEditJob}
+          onDelete={handleDeleteClick}
+          onCreateClick={onCreateClick}
+          tabValue="expired"
+        />
+      </TabsContent>
     </Tabs>
   );
 };

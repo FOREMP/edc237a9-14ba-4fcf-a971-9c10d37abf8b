@@ -6,7 +6,8 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSubscriptionPlan } from "@/hooks/useSubscriptionPlan";
 import { Loader2Icon } from "lucide-react";
 import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
-import JobList from "@/components/dashboard/JobList";
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
+import JobDialogs from "@/components/dashboard/JobDialogs";
 import { useDashboardJobs } from "@/hooks/useDashboardJobs";
 import { Button } from "@/components/ui/button";
 
@@ -18,7 +19,8 @@ const Dashboard = () => {
     loading: planLoading, 
     refreshPlan,
     canCreateJob,
-    getUpgradeMessage
+    getUpgradeMessage,
+    remainingPosts
   } = useSubscriptionPlan();
   const [hasRendered, setHasRendered] = useState(false);
   const navigate = useNavigate();
@@ -31,7 +33,15 @@ const Dashboard = () => {
     handleEdit,
     handleDelete,
     handleCreateJob,
-    isCreating
+    handleCreateClick,
+    handleDeleteConfirm,
+    isCreating,
+    isDialogOpen,
+    setIsDialogOpen,
+    isAlertOpen,
+    setIsAlertOpen,
+    jobToDelete,
+    remainingJobs
   } = useDashboardJobs();
 
   // Track rendering to prevent infinite loops
@@ -102,7 +112,7 @@ const Dashboard = () => {
               status: isActive ? 'active' : 'inactive',
               expiresAt: null
             }}
-            remainingJobs={null}
+            remainingJobs={remainingJobs}
             refreshSubscription={() => refreshPlan(true)}
           />
 
@@ -119,20 +129,20 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Job Management - Only for Standard and Premium */}
-          {(tier === 'standard' || tier === 'premium') && (
+          {/* Job Management - For Basic, Standard and Premium */}
+          {(tier === 'basic' || tier === 'standard' || tier === 'premium') && (
             <div className="mb-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">Mina jobbannonser</h2>
                 {canCreateJob() ? (
-                  <Button onClick={() => handleCreateJob} disabled={isCreating}>
+                  <Button onClick={handleCreateClick} disabled={isCreating}>
                     {isCreating ? <Loader2Icon className="w-4 h-4 animate-spin mr-2" /> : null}
                     Skapa ny jobbannons
                   </Button>
                 ) : (
                   <div className="text-right">
                     <p className="text-sm text-muted-foreground mb-2">
-                      Du har nått din månadsgräns för jobbannonser
+                      Du har nått din månadsgräns för jobbannonser ({remainingPosts} kvar)
                     </p>
                     <Button onClick={() => navigate('/pricing')} variant="outline">
                       Uppgradera plan
@@ -141,32 +151,15 @@ const Dashboard = () => {
                 )}
               </div>
 
-              <JobList
+              <DashboardTabs
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
                 jobs={jobs}
                 isLoading={jobsLoading}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onCreateClick={() => handleCreateJob}
-                tabValue={activeTab}
+                handleEditJob={handleEdit}
+                handleDeleteClick={handleDelete}
+                onCreateClick={handleCreateClick}
               />
-            </div>
-          )}
-
-          {/* Basic users see job browsing only */}
-          {tier === 'basic' && (
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-bold mb-4">Utforska lediga jobb</h2>
-              <p className="text-muted-foreground mb-6">
-                Med din Basic-plan kan du söka och ansöka om jobb. Uppgradera till Standard för att publicera egna jobbannonser.
-              </p>
-              <div className="flex gap-4 justify-center">
-                <Button onClick={() => navigate('/jobs')}>
-                  Bläddra bland jobb
-                </Button>
-                <Button onClick={() => navigate('/pricing')} variant="outline">
-                  Uppgradera plan
-                </Button>
-              </div>
             </div>
           )}
 
@@ -179,6 +172,17 @@ const Dashboard = () => {
               </Button>
             </div>
           )}
+
+          {/* Job Creation and Delete Dialogs */}
+          <JobDialogs
+            isDialogOpen={isDialogOpen}
+            isAlertOpen={isAlertOpen}
+            jobToDelete={jobToDelete}
+            setIsDialogOpen={setIsDialogOpen}
+            setIsAlertOpen={setIsAlertOpen}
+            handleCreateJob={handleCreateJob}
+            handleDeleteConfirm={handleDeleteConfirm}
+          />
         </div>
       </Layout>
     );
