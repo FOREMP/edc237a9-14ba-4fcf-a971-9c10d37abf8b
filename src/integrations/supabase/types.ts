@@ -240,6 +240,13 @@ export type Database = {
         Args: { user_id: string }
         Returns: boolean
       }
+      get_job_view_stats: {
+        Args: { job_uuid: string }
+        Returns: {
+          impressions: number
+          detail_views: number
+        }[]
+      }
       increment_post_count: {
         Args: { user_id: string }
         Returns: boolean

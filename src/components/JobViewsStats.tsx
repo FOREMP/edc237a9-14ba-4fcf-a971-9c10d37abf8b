@@ -1,70 +1,79 @@
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, MousePointer } from "lucide-react";
-import { useJobViewsStats } from '@/hooks/useJobViews';
-import { useSubscriptionStatus } from '@/hooks/useSubscriptionStatus';
+import { useJobViewStats } from "@/hooks/useJobViewStats";
+import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 
 interface JobViewsStatsProps {
   jobId: string;
 }
 
 const JobViewsStats = ({ jobId }: JobViewsStatsProps) => {
+  const { stats, isLoading, error } = useJobViewStats(jobId);
   const { features } = useSubscriptionStatus();
-  const { impressions, detailViews, isLoading, error } = useJobViewsStats(jobId);
-  
-  // Only show stats for Standard and Premium plans (not Basic or free)
+
+  // Only show for Standard or Premium plans
   if (!features.hasJobViewStats && !features.hasAdvancedStats) {
     return null;
   }
-  
-  if (error) {
+
+  if (isLoading) {
     return (
-      <Card className="bg-red-50">
-        <CardContent className="pt-6 text-center text-red-600">
-          <p>Det gick inte att ladda visningsstatistik</p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Statistik</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-center py-2">
+            <div className="w-4 h-4 rounded-full border-2 border-t-primary border-primary/30 animate-spin"></div>
+          </div>
         </CardContent>
       </Card>
     );
   }
-  
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Statistik</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">Kunde inte ladda</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">Visningsstatistik</CardTitle>
+      <CardHeader>
+        <CardTitle className="text-sm">Statistik</CardTitle>
+        <CardDescription className="text-xs">Visningar senaste 30 dagarna</CardDescription>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/4" />
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Eye size={14} className="text-blue-500" />
+            <span className="text-xs">Visningar</span>
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 border rounded-lg flex items-center justify-between">
-              <div className="flex items-center">
-                <MousePointer className="h-4 w-4 mr-2 text-blue-500" />
-                <div>
-                  <p className="text-sm font-medium">Impressioner</p>
-                  <p className="text-xs text-muted-foreground">Job synligt i lista</p>
-                </div>
-              </div>
-              <p className="text-2xl font-bold">{impressions}</p>
-            </div>
-            
-            <div className="p-4 border rounded-lg flex items-center justify-between">
-              <div className="flex items-center">
-                <Eye className="h-4 w-4 mr-2 text-green-500" />
-                <div>
-                  <p className="text-sm font-medium">Detaljvisningar</p>
-                  <p className="text-xs text-muted-foreground">Klick för mer info</p>
-                </div>
-              </div>
-              <p className="text-2xl font-bold">{detailViews}</p>
-            </div>
+          <span className="font-semibold text-sm">{stats.impressions}</span>
+        </div>
+        
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MousePointer size={14} className="text-green-500" />
+            <span className="text-xs">Klick</span>
           </div>
-        )}
+          <span className="font-semibold text-sm">{stats.detailViews}</span>
+        </div>
+        
+        <div className="pt-2 border-t">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium">Totalt</span>
+            <span className="font-bold text-sm">{stats.totalViews}</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

@@ -74,7 +74,7 @@ export const useSubscriptionPlan = () => {
       return "Uppgradera till Basic för att publicera jobbannonser (5 per månad)";
     }
     if (planFeatures.isBasic && planFeatures.remainingPosts === 0) {
-      return "Uppgradera till Standard för fler jobbannonser (15 per månad) och hantera sökanden";
+      return "Uppgradera till Standard för fler jobbannonser (15 per månad) och se visningsstatistik";
     }
     if (planFeatures.isStandard && planFeatures.remainingPosts === 0) {
       return "Uppgradera till Premium för obegränsade jobbannonser och avancerade funktioner";

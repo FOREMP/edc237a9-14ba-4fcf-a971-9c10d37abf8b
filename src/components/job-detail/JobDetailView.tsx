@@ -8,6 +8,7 @@ import { sv } from "date-fns/locale";
 import JobContactInfo from "./JobContactInfo";
 import JobCompanyInfo from "./JobCompanyInfo";
 import JobViewsStats from "@/components/JobViewsStats";
+import JobViewsStatsTable from "@/components/JobViewsStatsTable";
 
 interface JobDetailViewProps {
   job: Job;
@@ -101,6 +102,13 @@ const JobDetailView = ({ job, formattedDate, jobTypeText, isOwner, isAdmin }: Jo
             </>
           )}
         </div>
+
+        {/* Stats table for job owners - show below job details on mobile/tablet */}
+        {(isOwner || isAdmin) && job.id && (
+          <div className="md:hidden">
+            <JobViewsStatsTable jobId={job.id} jobTitle={job.title} />
+          </div>
+        )}
       </div>
       
       <div className="space-y-4">
@@ -111,10 +119,17 @@ const JobDetailView = ({ job, formattedDate, jobTypeText, isOwner, isAdmin }: Jo
           jobTypeText={jobTypeText} 
         />
         
-        {/* Stats for job owners only */}
+        {/* Stats for job owners - compact version for sidebar */}
         {(isOwner || isAdmin) && job.id && (
-          <div className="mt-4">
+          <div className="hidden md:block">
             <JobViewsStats jobId={job.id} />
+          </div>
+        )}
+
+        {/* Stats table for job owners - detailed version for desktop */}
+        {(isOwner || isAdmin) && job.id && (
+          <div className="hidden md:block">
+            <JobViewsStatsTable jobId={job.id} jobTitle={job.title} />
           </div>
         )}
       </div>

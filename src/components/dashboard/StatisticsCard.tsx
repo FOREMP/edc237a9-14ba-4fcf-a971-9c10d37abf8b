@@ -8,26 +8,27 @@ const StatisticsCard = () => {
   const navigate = useNavigate();
   const { features } = useSubscriptionStatus();
 
-  // Only show for Standard or Premium plans (not basic or free)
-  if (!features.hasJobViewStats && !features.hasAdvancedStats) {
-    return null;
-  }
+  // Show for Standard or Premium plans (not basic or free)
+  const canAccessStats = features.hasJobViewStats || features.hasAdvancedStats;
 
   return (
     <Card 
-      className="cursor-pointer transition-all hover:shadow-md" 
-      onClick={() => navigate('/statistics')}
+      className={`transition-all ${canAccessStats ? 'cursor-pointer hover:shadow-md' : 'opacity-60'}`}
+      onClick={canAccessStats ? () => navigate('/statistics') : undefined}
     >
       <CardContent className="p-6 flex items-center space-x-4">
-        <div className="bg-blue-100 p-3 rounded-full">
-          <PieChart className="h-6 w-6 text-blue-500" />
+        <div className={`p-3 rounded-full ${canAccessStats ? 'bg-blue-100' : 'bg-gray-100'}`}>
+          <PieChart className={`h-6 w-6 ${canAccessStats ? 'text-blue-500' : 'text-gray-400'}`} />
         </div>
         <div>
           <h3 className="text-lg font-medium">Visningsstatistik</h3>
           <p className="text-muted-foreground">
-            {features.hasAdvancedStats 
-              ? 'Se detaljerad statistik för dina annonser' 
-              : 'Se hur dina jobbannonser presterar'}
+            {canAccessStats 
+              ? (features.hasAdvancedStats 
+                  ? 'Se detaljerad statistik för dina annonser' 
+                  : 'Se hur dina jobbannonser presterar')
+              : 'Inte tillgänglig'
+            }
           </p>
         </div>
       </CardContent>
