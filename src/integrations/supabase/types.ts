@@ -74,6 +74,7 @@ export type Database = {
       }
       jobs: {
         Row: {
+          boosted_at: string | null
           company_id: string
           company_name: string
           created_at: string
@@ -92,6 +93,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          boosted_at?: string | null
           company_id: string
           company_name: string
           created_at?: string
@@ -110,6 +112,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          boosted_at?: string | null
           company_id?: string
           company_name?: string
           created_at?: string

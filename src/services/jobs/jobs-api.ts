@@ -176,10 +176,7 @@ export const jobsServiceApi = {
     try {
       let query = supabase
         .from('jobs')
-        .select(`
-          *,
-          profiles!jobs_company_id_fkey(company_name)
-        `)
+        .select('*')
         .eq('status', 'approved');
 
       // Add current date filter to only show non-expired jobs
@@ -206,14 +203,14 @@ export const jobsServiceApi = {
       // Apply sorting - boosted jobs first, then by boost date (most recent first), then by creation date
       const sortBy = filters?.sortBy || 'newest';
       if (sortBy === 'newest') {
-        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+        query = query.order('boosted_at', { ascending: false, nullsFirst: false })
                     .order('created_at', { ascending: false });
       } else if (sortBy === 'oldest') {
-        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+        query = query.order('boosted_at', { ascending: false, nullsFirst: false })
                     .order('created_at', { ascending: true });
       } else if (sortBy === 'relevant') {
         // For relevance, still prioritize boosted jobs but then sort by relevance score
-        query = query.order('boosted_at', { ascending: false, nullsLast: true })
+        query = query.order('boosted_at', { ascending: false, nullsFirst: false })
                     .order('created_at', { ascending: false });
       }
 
@@ -224,13 +221,10 @@ export const jobsServiceApi = {
         throw error;
       }
 
-      // Map the data to include company_name from the joined profiles table
+      // Map the data and include company_name
       return (data || []).map(job => ({
-        ...job,
-        company_name: job.profiles?.company_name || job.company_name,
-        createdAt: new Date(job.created_at),
-        updatedAt: new Date(job.updated_at),
-        expiresAt: new Date(job.expires_at)
+        ...mapDbJobToFrontend(job),
+        companyName: job.company_name
       }));
     } catch (error) {
       console.error('Error in getAllJobs:', error);
@@ -446,7 +440,7 @@ export const jobsServiceApi = {
       return null;
     }
   },
-
+  
   /**
    * Update job status (for admin)
    */
