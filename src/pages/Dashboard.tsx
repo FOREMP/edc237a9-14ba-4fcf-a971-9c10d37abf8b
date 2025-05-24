@@ -8,7 +8,6 @@ import { Loader2Icon } from "lucide-react";
 import SubscriptionStatusCard from "@/components/dashboard/SubscriptionStatusCard";
 import JobList from "@/components/dashboard/JobList";
 import { useDashboardJobs } from "@/hooks/useDashboardJobs";
-import { Job } from "@/types";
 import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
@@ -89,8 +88,8 @@ const Dashboard = () => {
             features={{
               monthlyPostLimit: tier === 'premium' ? 999 : tier === 'standard' ? 15 : tier === 'basic' ? 5 : 1,
               monthlyPostsUsed: jobs.filter(job => 
-                new Date(job.created_at).getMonth() === new Date().getMonth() &&
-                new Date(job.created_at).getFullYear() === new Date().getFullYear()
+                new Date(job.createdAt).getMonth() === new Date().getMonth() &&
+                new Date(job.createdAt).getFullYear() === new Date().getFullYear()
               ).length,
               hasBasicStats: tier !== 'free',
               hasJobViewStats: tier === 'standard' || tier === 'premium',
@@ -126,7 +125,7 @@ const Dashboard = () => {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">Mina jobbannonser</h2>
                 {canCreateJob() ? (
-                  <Button onClick={handleCreateJob} disabled={isCreating}>
+                  <Button onClick={() => handleCreateJob} disabled={isCreating}>
                     {isCreating ? <Loader2Icon className="w-4 h-4 animate-spin mr-2" /> : null}
                     Skapa ny jobbannons
                   </Button>
@@ -147,7 +146,7 @@ const Dashboard = () => {
                 isLoading={jobsLoading}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
-                onCreateClick={handleCreateJob}
+                onCreateClick={() => handleCreateJob}
                 tabValue={activeTab}
               />
             </div>

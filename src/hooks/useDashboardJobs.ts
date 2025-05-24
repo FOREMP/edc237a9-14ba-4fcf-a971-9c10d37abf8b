@@ -5,13 +5,17 @@ import { jobsService } from "@/services/jobs";
 import { toast } from "sonner";
 import { useSubscriptionFeatures } from "./useSubscriptionFeatures";
 import { useSubscriptionLimits } from "./useSubscriptionLimits";
+import { useNavigate } from "react-router-dom";
 
-export const useDashboardJobs = (activeTab: string) => {
+export const useDashboardJobs = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("all");
+  const [isCreating, setIsCreating] = useState(false);
   const { features, refreshSubscription } = useSubscriptionFeatures();
   const { incrementPostCount, checkPostingLimit, getRemainingJobSlots } = useSubscriptionLimits();
   const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   const fetchJobs = async () => {
     setIsLoading(true);
@@ -125,6 +129,24 @@ export const useDashboardJobs = (activeTab: string) => {
     }
   };
 
+  const handleEdit = (job: Job) => {
+    navigate(`/edit-job/${job.id}`);
+  };
+
+  const handleDelete = async (jobId: string) => {
+    await deleteJob(jobId);
+  };
+
+  const handleCreateJob = async (formData: JobFormData) => {
+    setIsCreating(true);
+    try {
+      const success = await createJob(formData);
+      return success;
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
   }, [activeTab]);
@@ -132,6 +154,12 @@ export const useDashboardJobs = (activeTab: string) => {
   return {
     jobs,
     isLoading,
+    activeTab,
+    setActiveTab,
+    handleEdit,
+    handleDelete,
+    handleCreateJob,
+    isCreating,
     createJob,
     deleteJob,
     refreshJobs: fetchJobs,
