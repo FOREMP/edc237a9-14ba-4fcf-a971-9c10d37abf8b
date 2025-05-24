@@ -12,7 +12,7 @@ export const useSubscriptionStatus = () => {
   const [hasProcessedUpdate, setHasProcessedUpdate] = useState(false);
   const lastProcessedTimestamp = useRef<string | null>(null);
   const refreshAttempts = useRef<number>(0);
-  const maxRefreshAttempts = 5; // Reduced for faster response
+  const maxRefreshAttempts = 3; // Reduced for faster response
 
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
@@ -99,7 +99,7 @@ export const useSubscriptionStatus = () => {
       // Schedule additional refresh attempts with shorter intervals
       const scheduleRefreshAttempts = () => {
         if (refreshAttempts.current < maxRefreshAttempts) {
-          const delay = Math.min(2000, Math.pow(1.3, refreshAttempts.current) * 500); // Faster intervals
+          const delay = Math.min(1500, Math.pow(1.5, refreshAttempts.current) * 500); // Faster intervals
           
           console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1}/${maxRefreshAttempts} after ${delay}ms`);
           

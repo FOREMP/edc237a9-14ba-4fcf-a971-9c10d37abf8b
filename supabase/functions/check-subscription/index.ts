@@ -4,9 +4,9 @@ import Stripe from "https://esm.sh/stripe@12.18.0?target=deno";
 import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
-// Cache subscriptions in memory to improve response time for frequent checks
+// Cache subscriptions in memory for faster response times
 const subscriptionCache = new Map();
-const CACHE_TTL = 5000; // Reduced to 5 seconds for better real-time updates
+const CACHE_TTL = 2000; // Reduced to 2 seconds for real-time updates
 
 serve(async (req) => {
   // Handle CORS preflight request
