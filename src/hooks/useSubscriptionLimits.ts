@@ -32,7 +32,14 @@ export const useSubscriptionLimits = () => {
       if (error && error.code !== 'PGRST116') {
         console.error('Error fetching posting limits:', error);
       } else if (data) {
-        setLimits(data);
+        // Map the database fields to our interface
+        setLimits({
+          monthlyPostLimit: data.monthly_post_limit,
+          monthlyPostsUsed: data.monthly_posts_used,
+          subscriptionTier: data.subscription_tier,
+          currentPeriodStart: data.current_period_start,
+          currentPeriodEnd: data.current_period_end
+        });
       }
     } catch (error) {
       console.error('Error fetching posting limits:', error);

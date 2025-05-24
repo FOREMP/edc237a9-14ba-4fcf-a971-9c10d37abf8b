@@ -73,4 +73,3 @@ const JobDialogs = ({
 };
 
 export default JobDialogs;
-

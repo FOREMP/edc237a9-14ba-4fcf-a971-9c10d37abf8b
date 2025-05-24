@@ -28,7 +28,7 @@ const Dashboard = () => {
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8">
-        <DashboardHeader />
+        <DashboardHeader onCreateClick={handleCreateClick} />
         
         <DashboardTabs
           activeTab={activeTab}
@@ -47,7 +47,6 @@ const Dashboard = () => {
           setIsAlertOpen={setIsAlertOpen}
           handleCreateJob={handleCreateJob}
           handleDeleteConfirm={handleDeleteConfirm}
-          isCreating={isCreating}
           jobToDelete={jobToDelete}
         />
       </div>
