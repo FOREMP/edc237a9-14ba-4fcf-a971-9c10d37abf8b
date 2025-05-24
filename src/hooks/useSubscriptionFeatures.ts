@@ -16,6 +16,8 @@ export interface SubscriptionFeatures {
   hasPrioritySupport: boolean;
   isActive: boolean;
   tier: SubscriptionTier;
+  planName: string;
+  status: string;
   expiresAt: Date | null;
 }
 
@@ -35,6 +37,8 @@ export const useSubscriptionFeatures = () => {
     hasPrioritySupport: false,
     isActive: false,
     tier: 'free',
+    planName: 'free',
+    status: 'inactive',
     expiresAt: null
   });
 
@@ -46,10 +50,42 @@ export const useSubscriptionFeatures = () => {
       return;
     }
     
-    console.log("Refreshing subscription data");
+    console.log("Refreshing subscription data, force:", shouldForceRefresh);
     setLastRefreshTime(now);
     setRefreshTrigger(prev => prev + 1);
   }, [lastRefreshTime]);
+
+  const syncWithStripe = useCallback(async (forceRefresh = false) => {
+    if (!user?.id || !isAuthenticated) {
+      console.log("syncWithStripe: No authenticated user");
+      return;
+    }
+
+    console.log("Syncing with Stripe for user:", user.id);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('check-subscription', {
+        body: { force_fresh: forceRefresh }
+      });
+      
+      if (error) {
+        console.error("Stripe sync error:", error);
+        throw error;
+      }
+      
+      console.log("Stripe sync successful:", data);
+      
+      // Force refresh local data after Stripe sync
+      setTimeout(() => {
+        setRefreshTrigger(prev => prev + 1);
+      }, 500);
+      
+      return data;
+    } catch (error) {
+      console.error("Exception during Stripe sync:", error);
+      throw error;
+    }
+  }, [user?.id, isAuthenticated]);
 
   const fetchSubscriptionFeatures = useCallback(async () => {
     if (!user?.id || !isAuthenticated) {
@@ -58,6 +94,8 @@ export const useSubscriptionFeatures = () => {
         ...prev,
         isActive: false,
         tier: 'free',
+        planName: 'free',
+        status: 'inactive',
         monthlyPostLimit: 1,
         monthlyPostsUsed: 0
       }));
@@ -110,14 +148,18 @@ export const useSubscriptionFeatures = () => {
         console.log("useSubscriptionFeatures: Limits data:", limitsData);
       }
 
-      // If we have subscriber data with an active subscription, use it
+      // Determine subscription status
       let isActive = false;
       let tier: SubscriptionTier = 'free';
+      let planName = 'free';
+      let status = 'inactive';
       let expiresAt: Date | null = null;
       
       if (subscriberData) {
         isActive = subscriberData.subscribed || false;
         tier = (subscriberData.subscription_tier as SubscriptionTier) || 'free';
+        planName = tier;
+        status = isActive ? 'active' : 'inactive';
         expiresAt = subscriberData.subscription_end ? new Date(subscriberData.subscription_end) : null;
         
         // Check if subscription has expired
@@ -125,14 +167,18 @@ export const useSubscriptionFeatures = () => {
           console.log("useSubscriptionFeatures: Subscription expired at:", expiresAt);
           isActive = false;
           tier = 'free';
+          planName = 'free';
+          status = 'expired';
         }
       }
 
       // If no subscriber data but we have limits data, fall back to that
       if (!subscriberData && limitsData?.subscription_tier) {
         tier = limitsData.subscription_tier as SubscriptionTier;
+        planName = tier;
         // For limits data without subscriber record, assume active if not free
         isActive = tier !== 'free';
+        status = isActive ? 'active' : 'inactive';
       }
 
       // Determine features based on tier
@@ -152,6 +198,8 @@ export const useSubscriptionFeatures = () => {
       const updatedFeatures: SubscriptionFeatures = {
         isActive,
         tier,
+        planName,
+        status,
         expiresAt,
         monthlyPostLimit,
         monthlyPostsUsed,
@@ -165,30 +213,19 @@ export const useSubscriptionFeatures = () => {
       console.log("useSubscriptionFeatures: Final features calculated:", updatedFeatures);
       setFeatures(updatedFeatures);
       
-      // If we have URL parameters indicating a recent payment, and the subscription isn't active yet,
-      // trigger the check-subscription function to sync with Stripe
+      // Check URL for payment parameters and sync if needed
       const urlParams = new URLSearchParams(window.location.search);
       const paymentStatus = urlParams.get('payment_status');
+      const paymentSuccess = urlParams.get('payment_success');
       const planFromUrl = urlParams.get('plan');
       
-      if ((paymentStatus === 'pending' || paymentStatus === 'success') && planFromUrl && !isActive) {
+      if ((paymentStatus === 'pending' || paymentStatus === 'success' || paymentSuccess === 'true') && planFromUrl && !isActive) {
         console.log("useSubscriptionFeatures: Payment detected but subscription not active, triggering Stripe sync");
         
-        try {
-          const { data: checkResult, error: checkError } = await supabase.functions.invoke('check-subscription');
-          
-          if (checkError) {
-            console.error("Failed to sync subscription with Stripe:", checkError);
-          } else {
-            console.log("Stripe sync result:", checkResult);
-            // Trigger another refresh after a short delay
-            setTimeout(() => {
-              setRefreshTrigger(prev => prev + 1);
-            }, 2000);
-          }
-        } catch (error) {
-          console.error("Error calling check-subscription function:", error);
-        }
+        // Don't await this to avoid blocking the UI
+        syncWithStripe(true).catch(error => {
+          console.error("Failed to sync subscription with Stripe:", error);
+        });
       }
       
       setLoading(false);
@@ -199,16 +236,24 @@ export const useSubscriptionFeatures = () => {
       setFeatures(prev => ({
         ...prev,
         isActive: false,
-        tier: 'free'
+        tier: 'free',
+        planName: 'free',
+        status: 'error'
       }));
       setLoading(false);
     }
-  }, [user?.id, user?.email, isAuthenticated]);
+  }, [user?.id, user?.email, isAuthenticated, syncWithStripe]);
 
   useEffect(() => {
     console.log("useSubscriptionFeatures: Effect triggered, user:", user?.id, "authenticated:", isAuthenticated);
     fetchSubscriptionFeatures();
   }, [fetchSubscriptionFeatures, refreshTrigger]);
 
-  return { features, loading, dataFetchError, refreshSubscription };
+  return { 
+    features, 
+    loading, 
+    dataFetchError, 
+    refreshSubscription,
+    syncWithStripe
+  };
 };

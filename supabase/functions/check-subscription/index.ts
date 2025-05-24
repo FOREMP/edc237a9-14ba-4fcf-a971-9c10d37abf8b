@@ -5,9 +5,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 // Cache subscriptions in memory to improve response time for frequent checks
-// This will be reset when the function cold starts
 const subscriptionCache = new Map();
-const CACHE_TTL = 20000; // 20 seconds cache TTL
+const CACHE_TTL = 5000; // Reduced to 5 seconds for better real-time updates
 
 serve(async (req) => {
   // Handle CORS preflight request
@@ -16,6 +15,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log("=== CHECK SUBSCRIPTION STARTED ===");
+    
     // Get the Stripe API key from environment
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecretKey) {
@@ -67,26 +68,30 @@ serve(async (req) => {
 
     console.log("Checking subscription status for user:", user.id, user.email);
     
-    // Check if we have a valid cached result
-    const cacheKey = `${user.id}`;
-    const cachedData = subscriptionCache.get(cacheKey);
+    // Check for force refresh parameter
     const requestBody = await req.json().catch(() => ({}));
     const forceFresh = requestBody.force_fresh === true;
     
+    // Check cache unless force refresh is requested
+    const cacheKey = `${user.id}`;
+    const cachedData = subscriptionCache.get(cacheKey);
+    
     if (cachedData && !forceFresh && (Date.now() - cachedData.timestamp) < CACHE_TTL) {
-      console.log("Returning cached subscription data");
+      console.log("Returning cached subscription data for user:", user.id);
       return new Response(JSON.stringify(cachedData.data), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log("Fetching fresh subscription data from Stripe for user:", user.id);
+
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: "2023-10-16",
     });
 
-    // First, check if the user has a Stripe customer ID
+    // First, check if the user has a Stripe customer ID in our database
     const { data: existingSubscriber, error: subscriberError } = await supabase
       .from("subscribers")
       .select("stripe_customer_id, subscription_tier, subscribed, subscription_end")
@@ -101,7 +106,7 @@ serve(async (req) => {
     
     // If no customer ID found in our database, search by email in Stripe
     if (!customerId) {
-      console.log("No customer ID in database, checking Stripe by email");
+      console.log("No customer ID in database, searching Stripe by email:", user.email);
       const customers = await stripe.customers.list({
         email: user.email,
         limit: 1,
@@ -111,8 +116,7 @@ serve(async (req) => {
         customerId = customers.data[0].id;
         console.log("Found customer in Stripe:", customerId);
       } else {
-        // No customer exists in Stripe either
-        console.log("No Stripe customer found for email", user.email);
+        console.log("No Stripe customer found for email:", user.email);
         
         // Create or update the subscriber record to show no subscription
         const { error: upsertError } = await supabase
@@ -123,7 +127,7 @@ serve(async (req) => {
             subscribed: false,
             subscription_tier: "free",
             updated_at: new Date().toISOString()
-          });
+          }, { onConflict: 'user_id' });
         
         if (upsertError) {
           console.error("Error upserting subscriber record:", upsertError);
@@ -133,7 +137,9 @@ serve(async (req) => {
         
         const resultData = { 
           subscribed: false,
-          subscription_tier: "free"
+          subscription_tier: "free",
+          status: "inactive",
+          plan_name: "free"
         };
         
         // Cache the result
@@ -142,6 +148,7 @@ serve(async (req) => {
           timestamp: Date.now()
         });
         
+        console.log("=== CHECK SUBSCRIPTION COMPLETED (FREE) ===");
         return new Response(JSON.stringify(resultData), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -150,54 +157,72 @@ serve(async (req) => {
     }
 
     // Now check for active subscriptions
-    console.log("Checking for active subscriptions for customer:", customerId);
+    console.log("Checking for subscriptions for customer:", customerId);
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
-      status: 'active',
-      limit: 10,
+      limit: 10, // Get all subscriptions to find the most recent active one
     });
 
     let isSubscribed = false;
     let subscriptionTier = "free";
+    let planName = "free";
+    let status = "inactive";
     let subscriptionEnd = null;
     let subscriptionId = null;
 
-    // Process subscription data
+    // Process subscription data - prioritize active subscriptions
     if (subscriptions.data.length > 0) {
-      const activeSubscription = subscriptions.data[0]; // Get the most recent active subscription
+      // Sort by created date to get the most recent subscription
+      const sortedSubscriptions = subscriptions.data.sort((a, b) => b.created - a.created);
       
-      isSubscribed = true;
-      subscriptionId = activeSubscription.id;
-      subscriptionEnd = new Date(activeSubscription.current_period_end * 1000).toISOString();
+      // Find the first active subscription, or use the most recent one
+      const activeSubscription = sortedSubscriptions.find(sub => sub.status === 'active') || sortedSubscriptions[0];
       
-      // Find the first subscription item with a price
-      const item = activeSubscription.items.data[0];
-      if (item) {
-        const price = await stripe.prices.retrieve(item.price.id);
-        const productId = price.product;
+      if (activeSubscription) {
+        subscriptionId = activeSubscription.id;
+        status = activeSubscription.status;
+        isSubscribed = activeSubscription.status === 'active' || activeSubscription.status === 'trialing';
+        subscriptionEnd = new Date(activeSubscription.current_period_end * 1000).toISOString();
         
-        // Get the product to determine the tier
-        const product = await stripe.products.retrieve(productId.toString());
+        console.log(`Found subscription: ${subscriptionId}, status: ${status}, ends: ${subscriptionEnd}`);
         
-        // Determine tier from product metadata or name more accurately
-        if (product.metadata && product.metadata.tier) {
-          subscriptionTier = product.metadata.tier.toLowerCase();
-        } else {
-          // Fall back to determine by product name
-          const productName = product.name.toLowerCase();
-          if (productName.includes('basic') || productName.includes('bas')) {
-            subscriptionTier = 'basic';
-          } else if (productName.includes('standard')) {
-            subscriptionTier = 'standard';
-          } else if (productName.includes('premium')) {
-            subscriptionTier = 'premium';
+        // Find the first subscription item with a price
+        const item = activeSubscription.items.data[0];
+        if (item) {
+          const price = await stripe.prices.retrieve(item.price.id);
+          const productId = price.product;
+          
+          // Get the product to determine the tier
+          const product = await stripe.products.retrieve(productId.toString());
+          
+          // Determine tier from product metadata or name
+          if (product.metadata && product.metadata.tier) {
+            subscriptionTier = product.metadata.tier.toLowerCase();
+            planName = product.metadata.tier.toLowerCase();
+          } else {
+            // Fall back to determine by product name
+            const productName = product.name.toLowerCase();
+            if (productName.includes('basic') || productName.includes('bas')) {
+              subscriptionTier = 'basic';
+              planName = 'basic';
+            } else if (productName.includes('standard')) {
+              subscriptionTier = 'standard';
+              planName = 'standard';
+            } else if (productName.includes('premium')) {
+              subscriptionTier = 'premium';
+              planName = 'premium';
+            } else if (productName.includes('single')) {
+              subscriptionTier = 'single';
+              planName = 'single';
+            }
           }
+          
+          console.log(`Determined subscription tier: ${subscriptionTier}, plan: ${planName}`);
         }
-        
-        console.log(`Found active subscription: ${subscriptionId}, tier: ${subscriptionTier}, ends: ${subscriptionEnd}`);
       }
     } else {
       // Check if user has a one-time purchase (single plan)
+      console.log("No subscriptions found, checking for one-time purchases");
       const charges = await stripe.charges.list({
         customer: customerId,
         limit: 10,
@@ -214,20 +239,26 @@ serve(async (req) => {
         if (singlePlanCharge) {
           isSubscribed = true;
           subscriptionTier = 'single';
+          planName = 'single';
+          status = 'active';
           // Set an expiration date 30 days from charge date
           const chargeDate = new Date(singlePlanCharge.created * 1000);
           const expireDate = new Date(chargeDate);
           expireDate.setDate(chargeDate.getDate() + 30);
           subscriptionEnd = expireDate.toISOString();
           console.log(`Found single plan purchase, expires: ${subscriptionEnd}`);
-        } else {
-          console.log("No relevant subscription or single plan purchase found");
         }
       }
     }
 
     // Always update the subscribers table with the latest information
-    // This is critical for subscription persistence
+    console.log("Updating subscriber record with:", {
+      subscribed: isSubscribed,
+      subscription_tier: subscriptionTier,
+      status: status,
+      plan_name: planName
+    });
+    
     const { error: upsertError } = await supabase
       .from("subscribers")
       .upsert({
@@ -239,7 +270,7 @@ serve(async (req) => {
         subscription_end: subscriptionEnd,
         subscription_id: subscriptionId,
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'user_id' });
     
     if (upsertError) {
       console.error("Error updating subscriber record:", upsertError);
@@ -248,7 +279,7 @@ serve(async (req) => {
     }
 
     // Update the job posting limits table to match
-    if (isSubscribed) {
+    if (isSubscribed && subscriptionTier !== 'free') {
       let monthlyPostLimit = 1;
       if (subscriptionTier === 'basic') monthlyPostLimit = 5;
       else if (subscriptionTier === 'standard') monthlyPostLimit = 15;
@@ -262,7 +293,7 @@ serve(async (req) => {
           subscription_tier: subscriptionTier,
           monthly_post_limit: monthlyPostLimit,
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'user_id' });
       
       if (limitsError) {
         console.error("Error updating job posting limits:", limitsError);
@@ -274,6 +305,8 @@ serve(async (req) => {
     const resultData = {
       subscribed: isSubscribed,
       subscription_tier: subscriptionTier,
+      plan_name: planName,
+      status: status,
       subscription_end: subscriptionEnd,
     };
     
@@ -283,6 +316,7 @@ serve(async (req) => {
       timestamp: Date.now()
     });
 
+    console.log("=== CHECK SUBSCRIPTION COMPLETED ===", resultData);
     return new Response(JSON.stringify(resultData), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

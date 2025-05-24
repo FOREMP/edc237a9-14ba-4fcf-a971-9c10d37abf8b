@@ -10,7 +10,18 @@ import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
   const { isAuthenticated, isLoading: authLoading, isAdmin, user, isCompany, adminCheckComplete } = useRequireAuth();
-  const { tier, isActive, loading: planLoading, refreshPlan, error: planError } = useSubscriptionPlan();
+  const { 
+    tier, 
+    planName, 
+    status, 
+    isActive, 
+    loading: planLoading, 
+    refreshPlan, 
+    syncWithStripe,
+    error: planError,
+    getPlanDisplayName,
+    getPlanBadgeColor 
+  } = useSubscriptionPlan();
   const [debugInfo, setDebugInfo] = useState<any>({});
   const [sessionInfo, setSessionInfo] = useState<any>({});
   const [isDebugging, setIsDebugging] = useState(false);
@@ -53,6 +64,8 @@ const Dashboard = () => {
         userRole: user?.role,
         userEmail: user?.email,
         subscriptionTier: tier,
+        subscriptionPlanName: planName,
+        subscriptionStatus: status,
         subscriptionActive: isActive,
         planLoading,
         planError
@@ -87,6 +100,8 @@ const Dashboard = () => {
             <p>Is Authenticated: {isAuthenticated.toString()}</p>
             <p>Plan Loading: {planLoading.toString()}</p>
             <p>Current Tier: {tier}</p>
+            <p>Plan Name: {planName}</p>
+            <p>Status: {status}</p>
           </div>
         </div>
       </Layout>
@@ -112,7 +127,7 @@ const Dashboard = () => {
 
   // Company user dashboard
   if (isCompany || (!isAdmin && user?.role === 'company')) {
-    console.log("Rendering company dashboard for user:", user?.email, "with plan:", tier);
+    console.log("Rendering company dashboard for user:", user?.email, "with plan:", tier, "status:", status);
     
     return (
       <Layout>
@@ -122,29 +137,43 @@ const Dashboard = () => {
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
               <h2 className="text-lg font-medium text-green-800 mb-2">✅ Dashboard laddat!</h2>
               <p className="text-green-700">
-                Du är inloggad som företagsanvändare med {tier} plan
+                Du är inloggad som företagsanvändare med <strong>{getPlanDisplayName()}</strong> plan
                 {isActive ? ' (aktiv)' : ' (ej aktiv)'}
               </p>
             </div>
           </div>
 
-          {/* Subscription Status */}
+          {/* Subscription Status with Real-time Plan Detection */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <h3 className="font-medium text-lg mb-2">Prenumerationsstatus</h3>
+            <h3 className="font-medium text-lg mb-2">Prenumerationsstatus - Real-time</h3>
             <div className="space-y-2 text-sm">
-              <p><strong>Plan:</strong> {tier.charAt(0).toUpperCase() + tier.slice(1)}</p>
-              <p><strong>Status:</strong> {isActive ? 'Aktiv' : 'Inaktiv'}</p>
+              <p><strong>Plan:</strong> <span className={`px-2 py-1 rounded text-white text-xs ${getPlanBadgeColor()}`}>{getPlanDisplayName()}</span></p>
+              <p><strong>Status:</strong> <span className={`px-2 py-1 rounded text-xs ${isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {status === 'active' ? 'Aktiv' : status === 'trialing' ? 'Testperiod' : status === 'expired' ? 'Utgången' : 'Inaktiv'}
+              </span></p>
+              <p><strong>Plan Name:</strong> {planName}</p>
+              <p><strong>Tier:</strong> {tier}</p>
               {planError && <p className="text-red-600"><strong>Fel:</strong> {planError}</p>}
             </div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => refreshPlan(true)}
-              className="mt-2"
-            >
-              <RefreshCw size={16} className="mr-1" />
-              Uppdatera prenumeration
-            </Button>
+            <div className="flex gap-2 mt-4">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => refreshPlan(true)}
+                disabled={planLoading}
+              >
+                {planLoading ? <Loader2Icon size={16} className="animate-spin mr-1" /> : <RefreshCw size={16} className="mr-1" />}
+                Force Refresh från Stripe
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => syncWithStripe(true)}
+              >
+                <RefreshCw size={16} className="mr-1" />
+                Sync med Stripe
+              </Button>
+            </div>
           </div>
 
           {/* User Information */}

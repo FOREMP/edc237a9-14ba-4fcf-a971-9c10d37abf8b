@@ -3,17 +3,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useSubscriptionFeatures } from './useSubscriptionFeatures';
-import { supabase } from '@/integrations/supabase/client';
 
 export const useSubscriptionStatus = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { features, loading, refreshSubscription } = useSubscriptionFeatures();
+  const { features, loading, refreshSubscription, syncWithStripe } = useSubscriptionFeatures();
   const refreshTimeoutRef = useRef<number | null>(null);
   const [hasProcessedPayment, setHasProcessedPayment] = useState(false);
   const [hasProcessedUpdate, setHasProcessedUpdate] = useState(false);
   const lastProcessedTimestamp = useRef<string | null>(null);
   const refreshAttempts = useRef<number>(0);
-  const maxRefreshAttempts = 8;
+  const maxRefreshAttempts = 5; // Reduced for faster response
 
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
@@ -45,7 +44,7 @@ export const useSubscriptionStatus = () => {
       
       toast.success(statusMessage, {
         description: "Vi synkroniserar din prenumeration med Stripe...",
-        duration: 5000,
+        duration: 6000,
         id: `payment-${paymentSuccess ? 'success' : 'pending'}-${timestamp || Date.now()}`
       });
       
@@ -55,46 +54,52 @@ export const useSubscriptionStatus = () => {
         lastProcessedTimestamp.current = timestamp;
       }
       
-      // Trigger Stripe synchronization immediately
-      const syncWithStripe = async () => {
-        try {
-          console.log("Triggering Stripe synchronization via check-subscription function");
-          const { data, error } = await supabase.functions.invoke('check-subscription');
-          
-          if (error) {
-            console.error("Stripe sync error:", error);
-            toast.error("Kunde inte synkronisera prenumeration med Stripe");
-          } else {
-            console.log("Stripe sync successful:", data);
-            // Force refresh the subscription data
-            refreshSubscription(true);
-          }
-        } catch (error) {
-          console.error("Exception during Stripe sync:", error);
-        }
-      };
-      
-      // Start sync immediately
-      syncWithStripe();
-      
-      // Clear URL parameters
+      // Clear URL parameters immediately to prevent reprocessing
       const newSearchParams = new URLSearchParams(searchParams);
       newSearchParams.delete('payment_success');
       newSearchParams.delete('payment_status');
       newSearchParams.delete('plan');
       newSearchParams.delete('ts');
-      setSearchParams(newSearchParams);
+      setSearchParams(newSearchParams, { replace: true });
+      
+      // Trigger immediate Stripe synchronization
+      const performStripeSync = async () => {
+        try {
+          console.log("Triggering immediate Stripe synchronization");
+          await syncWithStripe(true);
+          
+          // After sync, refresh the subscription data
+          refreshSubscription(true);
+          
+          // Show success message after a short delay
+          setTimeout(() => {
+            if (features.isActive && features.tier !== 'free') {
+              toast.success("Din prenumeration är nu aktiv!", {
+                description: `Du har nu tillgång till ${features.tier} funktioner.`,
+                duration: 5000
+              });
+            }
+          }, 2000);
+          
+        } catch (error) {
+          console.error("Stripe sync error:", error);
+          toast.error("Kunde inte synkronisera prenumeration med Stripe", {
+            description: "Försök uppdatera sidan eller kontakta support.",
+            duration: 8000
+          });
+        }
+      };
+      
+      // Start sync immediately
+      performStripeSync();
       
       // Reset refresh attempts counter
       refreshAttempts.current = 0;
       
-      // Schedule refresh attempts with optimized timing
+      // Schedule additional refresh attempts with shorter intervals
       const scheduleRefreshAttempts = () => {
         if (refreshAttempts.current < maxRefreshAttempts) {
-          // Start with quick checks, then gradually increase delay
-          const delay = refreshAttempts.current < 3 
-            ? 1000 // First 3 checks at 1 second intervals
-            : Math.min(5000, Math.pow(1.5, refreshAttempts.current - 3) * 1000); // Then exponential backoff up to 5 seconds
+          const delay = Math.min(2000, Math.pow(1.3, refreshAttempts.current) * 500); // Faster intervals
           
           console.log(`Scheduling refresh attempt ${refreshAttempts.current + 1}/${maxRefreshAttempts} after ${delay}ms`);
           
@@ -105,22 +110,6 @@ export const useSubscriptionStatus = () => {
             scheduleRefreshAttempts();
             refreshTimeoutRef.current = null;
           }, delay);
-        } else {
-          // Final status check
-          console.log("Completed all scheduled refresh attempts");
-          setTimeout(() => {
-            if (features.isActive && features.tier !== 'free') {
-              toast.success("Din prenumeration är nu aktiv!", {
-                description: `Du har nu tillgång till ${features.tier} funktioner.`,
-                duration: 5000
-              });
-            } else {
-              toast.warning("Prenumerationen aktiveras fortfarande", {
-                description: "Det kan ta upp till en minut. Prova att uppdatera sidan om problemet kvarstår.",
-                duration: 8000
-              });
-            }
-          }, 1000);
         }
       };
       
@@ -146,10 +135,15 @@ export const useSubscriptionStatus = () => {
       const newSearchParams = new URLSearchParams(searchParams);
       newSearchParams.delete('subscription_updated');
       newSearchParams.delete('ts');
-      setSearchParams(newSearchParams);
+      setSearchParams(newSearchParams, { replace: true });
       
-      // Immediate refresh
-      refreshSubscription(true);
+      // Immediate sync and refresh
+      syncWithStripe(true).then(() => {
+        refreshSubscription(true);
+      }).catch(error => {
+        console.error("Error syncing subscription update:", error);
+        toast.error("Kunde inte uppdatera prenumerationen");
+      });
     }
     
     // Cleanup on unmount
@@ -159,17 +153,23 @@ export const useSubscriptionStatus = () => {
         refreshTimeoutRef.current = null;
       }
     };
-  }, [searchParams, setSearchParams, refreshSubscription, hasProcessedPayment, hasProcessedUpdate, features.isActive, features.tier]);
+  }, [searchParams, setSearchParams, refreshSubscription, syncWithStripe, hasProcessedPayment, hasProcessedUpdate, features.isActive, features.tier]);
 
   // Reset processed flags when navigating to a new page
   useEffect(() => {
-    return () => {
+    const handleBeforeUnload = () => {
       setHasProcessedPayment(false);
       setHasProcessedUpdate(false);
       lastProcessedTimestamp.current = null;
       refreshAttempts.current = 0;
     };
-  }, [window.location.pathname]);
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      handleBeforeUnload();
+    };
+  }, []);
 
   // Force an immediate refresh when this hook mounts
   useEffect(() => {
@@ -180,6 +180,7 @@ export const useSubscriptionStatus = () => {
   return {
     features,
     loading,
-    refreshSubscription
+    refreshSubscription,
+    syncWithStripe
   };
 };
