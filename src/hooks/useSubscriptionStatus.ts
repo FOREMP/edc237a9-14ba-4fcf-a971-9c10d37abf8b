@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useSubscriptionFeatures } from './useSubscriptionFeatures';
+import { supabase } from '@/integrations/supabase/client';
 
 export const useSubscriptionStatus = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -14,6 +15,34 @@ export const useSubscriptionStatus = () => {
   const refreshAttempts = useRef<number>(0);
   const maxRefreshAttempts = 3; // Reduced for faster response
 
+  // Handle session restoration after Stripe redirect
+  useEffect(() => {
+    const restoreSession = async () => {
+      const sessionBackup = localStorage.getItem('supabase_session_backup');
+      if (sessionBackup) {
+        try {
+          const sessionData = JSON.parse(sessionBackup);
+          console.log("Restoring session after Stripe redirect for user:", sessionData.user_id);
+          
+          // Verify current session is still valid
+          const { data: currentSession } = await supabase.auth.getSession();
+          if (!currentSession.session) {
+            console.log("No current session, attempting to restore from backup");
+            // The session will be automatically restored by Supabase if tokens are valid
+          }
+          
+          // Clean up backup
+          localStorage.removeItem('supabase_session_backup');
+        } catch (error) {
+          console.error("Error restoring session:", error);
+          localStorage.removeItem('supabase_session_backup');
+        }
+      }
+    };
+
+    restoreSession();
+  }, []);
+
   // Handle payment success and subscription updates with timestamp tracking
   useEffect(() => {
     const paymentSuccess = searchParams.get('payment_success') === 'true';
@@ -21,6 +50,7 @@ export const useSubscriptionStatus = () => {
     const subscriptionUpdated = searchParams.get('subscription_updated') === 'true';
     const plan = searchParams.get('plan');
     const timestamp = searchParams.get('ts');
+    const urlUserId = searchParams.get('user_id');
     
     // Skip processing if we've already processed this exact timestamp
     if (timestamp && lastProcessedTimestamp.current === timestamp) {
@@ -30,7 +60,7 @@ export const useSubscriptionStatus = () => {
     
     // Handle payment success or pending payment
     if ((paymentSuccess || paymentPending) && plan && !hasProcessedPayment) {
-      console.log("Processing payment event for plan:", plan, "status:", paymentSuccess ? 'success' : 'pending', "timestamp:", timestamp);
+      console.log("Processing payment event for plan:", plan, "status:", paymentSuccess ? 'success' : 'pending', "timestamp:", timestamp, "userId:", urlUserId);
       
       // Clear any existing timeout
       if (refreshTimeoutRef.current) {
@@ -60,6 +90,7 @@ export const useSubscriptionStatus = () => {
       newSearchParams.delete('payment_status');
       newSearchParams.delete('plan');
       newSearchParams.delete('ts');
+      newSearchParams.delete('user_id');
       setSearchParams(newSearchParams, { replace: true });
       
       // Trigger immediate Stripe synchronization

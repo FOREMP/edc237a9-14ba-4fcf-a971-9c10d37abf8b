@@ -29,13 +29,24 @@ export const useStripePayment = () => {
       
       const timestamp = Date.now(); // Unique timestamp for this payment attempt
       
+      // Store session info in localStorage to preserve it across redirect
+      const session = await supabase.auth.getSession();
+      if (session.data.session) {
+        localStorage.setItem('supabase_session_backup', JSON.stringify({
+          access_token: session.data.session.access_token,
+          refresh_token: session.data.session.refresh_token,
+          user_id: user.id,
+          timestamp: timestamp
+        }));
+      }
+      
       // Add test mode parameter and timestamp to prevent caching
       const { data, error } = await supabase.functions.invoke('create-checkout', {
         body: { 
           plan,
           test_mode: true, // Always use test mode in development
           timestamp: timestamp, // Prevent caching
-          return_url: `${window.location.origin}/dashboard?payment_success=true&plan=${plan}&ts=${timestamp}`
+          return_url: `${window.location.origin}/dashboard?payment_success=true&plan=${plan}&ts=${timestamp}&user_id=${user.id}`
         }
       });
       
@@ -79,16 +90,8 @@ export const useStripePayment = () => {
         localStorage.setItem('stripe_checkout_timestamp', timestamp.toString());
         localStorage.setItem('stripe_checkout_plan', plan);
         
-        // Open in new tab instead of redirecting
-        window.open(data.url, '_blank');
-        
-        // After opening the checkout page, immediately check subscription status
-        // This sets up the system to refresh when the user returns
-        setTimeout(() => {
-          // Navigate to the dashboard with parameters to trigger a subscription check
-          // when the user returns from the payment process
-          navigate(`/dashboard?payment_status=pending&plan=${plan}&ts=${timestamp}`);
-        }, 500);
+        // Redirect to Stripe checkout (preserving session context)
+        window.location.href = data.url;
       } else {
         console.error('Ingen URL returnerades:', data);
         toast.error('Kunde inte skapa betalningslänk. Försök igen senare.');

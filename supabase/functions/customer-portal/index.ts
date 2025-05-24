@@ -41,9 +41,10 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Verify the user token
+    // Verify the user token using anon key for auth
+    const supabaseAuth = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") || "");
     const token = authorization.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
     
     if (userError || !user) {
       console.error("Auth error:", userError);
@@ -73,10 +74,10 @@ serve(async (req) => {
       apiVersion: "2023-10-16",
     });
 
-    // Check if the user already has a Stripe customer ID
+    // Check if the user already has a Stripe customer ID and verify they have an active subscription
     const { data: existingCustomer, error: customerError } = await supabase
       .from("subscribers")
-      .select("stripe_customer_id, subscribed")
+      .select("stripe_customer_id, subscribed, subscription_tier")
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -94,14 +95,25 @@ serve(async (req) => {
       });
     }
 
+    // Verify the customer has an active subscription
+    if (!existingCustomer.subscribed || existingCustomer.subscription_tier === 'free') {
+      console.error("User does not have an active subscription");
+      return new Response(JSON.stringify({ 
+        error: "You need an active subscription to access the customer portal. Please purchase a plan first."
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const customerId = existingCustomer.stripe_customer_id;
-    console.log("Found customer ID:", customerId);
+    console.log("Found customer ID:", customerId, "with subscription tier:", existingCustomer.subscription_tier);
 
     // Create a portal session
     try {
       const portalSession = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: return_url || `${req.headers.get("origin")}/dashboard?portal_return=true`,
+        return_url: return_url || `${req.headers.get("origin")}/dashboard?subscription_updated=true&ts=${Date.now()}`,
       });
 
       console.log("Created portal session:", portalSession.id);

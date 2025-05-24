@@ -52,9 +52,10 @@ serve(async (req) => {
       }
     });
     
-    // Verify the user token
+    // Verify the user token using anon key client for auth
+    const supabaseAuth = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") || "");
     const token = authorization.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(token);
     
     if (userError || !user) {
       console.error("Auth error:", userError);

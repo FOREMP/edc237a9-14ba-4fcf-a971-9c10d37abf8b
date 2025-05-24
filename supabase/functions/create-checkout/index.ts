@@ -101,7 +101,7 @@ serve(async (req) => {
       });
     }
 
-    console.log("Payment request:", { plan, test_mode, timestamp });
+    console.log("Payment request:", { plan, test_mode, timestamp, userId: user.id });
 
     // Initialize Stripe
     const stripe = new Stripe(stripeSecretKey, {
@@ -143,7 +143,8 @@ serve(async (req) => {
             user_id: user.id,
             email: user.email,
             stripe_customer_id: customerId,
-          });
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
       } else {
         // Create a new Stripe customer
         try {
@@ -163,7 +164,8 @@ serve(async (req) => {
               user_id: user.id,
               email: user.email,
               stripe_customer_id: customerId,
-            });
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
         } catch (error) {
           console.error("Failed to create Stripe customer:", error);
           return new Response(JSON.stringify({ 
@@ -186,6 +188,9 @@ serve(async (req) => {
         product_data: {
           name: "Basic Plan",
           description: "Up to 5 job postings per month",
+          metadata: {
+            tier: "basic"
+          }
         },
         unit_amount: 35000, // 350 SEK in öre
         recurring: {
@@ -196,8 +201,11 @@ serve(async (req) => {
       priceData = {
         currency: "sek",
         product_data: {
-          name: "Standard Plan",
+          name: "Standard Plan", 
           description: "Up to 15 job postings per month",
+          metadata: {
+            tier: "standard"
+          }
         },
         unit_amount: 75000, // 750 SEK in öre
         recurring: {
@@ -210,6 +218,9 @@ serve(async (req) => {
         product_data: {
           name: "Premium Plan",
           description: "Unlimited job postings per month",
+          metadata: {
+            tier: "premium"
+          }
         },
         unit_amount: 120000, // 1200 SEK in öre
         recurring: {
@@ -222,6 +233,9 @@ serve(async (req) => {
         product_data: {
           name: "Single Job Posting",
           description: "One-time job posting",
+          metadata: {
+            tier: "single"
+          }
         },
         unit_amount: 10000, // 100 SEK in öre
       };
@@ -239,10 +253,16 @@ serve(async (req) => {
     const successUrl = return_url || `${req.headers.get("origin")}/dashboard?payment_success=true&plan=${plan}&ts=${timestamp}`;
     console.log(`Success URL set to: ${successUrl}`);
 
-    // Create checkout session with dynamically created price
+    // Create checkout session with dynamically created price and user context
     try {
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
+        client_reference_id: user.id, // CRITICAL: Store user ID for later mapping
+        metadata: {
+          user_id: user.id,
+          user_email: user.email,
+          plan: plan
+        },
         line_items: [
           {
             price_data: priceData,
@@ -254,7 +274,7 @@ serve(async (req) => {
         cancel_url: `${req.headers.get("origin")}/pricing?payment_canceled=true`,
       });
       
-      console.log("Checkout session created:", session.id, session.url);
+      console.log("Checkout session created:", session.id, session.url, "for user:", user.id);
       
       return new Response(JSON.stringify({ url: session.url }), {
         status: 200,
