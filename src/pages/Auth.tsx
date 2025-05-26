@@ -31,7 +31,7 @@ const Auth = () => {
         if (error) {
           console.error("Auth page: Session check error:", error);
         } else if (data?.session) {
-          console.log("Auth page: Valid session found");
+          console.log("Auth page: Valid session found, user will be redirected");
           // Don't reload - let the auth hook handle the redirect
         } else {
           console.log("Auth page: No session found");

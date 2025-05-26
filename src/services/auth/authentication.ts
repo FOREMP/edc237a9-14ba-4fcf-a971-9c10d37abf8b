@@ -12,16 +12,8 @@ class BaseAuthService {
   protected authUser: any = null;
 
   constructor() {
-    // Initialize the current user from localStorage if available
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      try {
-        this.currentUser = JSON.parse(storedUser);
-      } catch (error) {
-        console.error("Error parsing stored user:", error);
-        localStorage.removeItem('currentUser'); // Remove invalid data
-      }
-    }
+    // Don't initialize from localStorage on construction to avoid stale data
+    // Let the auth hook handle initialization properly
   }
 
   // Sign up a new user
@@ -357,29 +349,33 @@ class BaseAuthService {
       if (session?.user) {
         this.authSession = session;
         this.authUser = session.user;
-        try {
-          await this.fetchUserProfile(session.user.id);
-          return true;
-        } catch (profileError) {
-          console.error("Error fetching user profile:", profileError);
-          
-          // Even if profile fetch fails, we still have a valid session
-          if (!this.currentUser && session.user) {
-            // Set minimal user data from session
-            const basicUser: User = {
-              id: session.user.id,
-              googleId: session.user.id,
-              email: session.user.email || '',
-              companyName: 'Unknown',
-              role: isAdminEmail(session.user.email || '') ? 'admin' : 'company'
-            };
-            this.setCurrentUser(basicUser);
+        
+        // Only fetch profile if we don't already have current user data
+        if (!this.currentUser || this.currentUser.id !== session.user.id) {
+          try {
+            await this.fetchUserProfile(session.user.id);
+          } catch (profileError) {
+            console.error("Error fetching user profile:", profileError);
+            
+            // Even if profile fetch fails, we still have a valid session
+            if (!this.currentUser && session.user) {
+              // Set minimal user data from session
+              const basicUser: User = {
+                id: session.user.id,
+                googleId: session.user.id,
+                email: session.user.email || '',
+                companyName: 'Unknown',
+                role: isAdminEmail(session.user.email || '') ? 'admin' : 'company'
+              };
+              this.setCurrentUser(basicUser);
+            }
           }
-          
-          return true;
         }
+        
+        return true;
       } else {
-        // No active session, don't clear the current user to avoid flickering
+        // No active session, clear current user
+        this.setCurrentUser(null);
         return false;
       }
     } catch (e) {
@@ -491,13 +487,14 @@ class BaseAuthService {
 
   // Get the current logged-in user
   getCurrentUser(): User | null {
+    // Always return the in-memory user, don't read from localStorage on every call
     return this.currentUser;
   }
 
   // Check if a user is currently logged in
   isUserAuthenticated(): boolean {
-    const session = this.getCurrentSession();
-    return !!session && !!session.user;
+    // Check both session and user data
+    return !!this.authSession?.user && !!this.currentUser;
   }
 
   // Check if the current user is an admin
@@ -526,9 +523,31 @@ class BaseAuthService {
   getCurrentSession(): any {
     return this.authSession;
   }
+
+  // Method to load user from localStorage (called by auth hook during initialization)
+  loadUserFromStorage(): User | null {
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        this.currentUser = user;
+        return user;
+      } catch (error) {
+        console.error("Error parsing stored user:", error);
+        localStorage.removeItem('currentUser');
+      }
+    }
+    return null;
+  }
 }
 
 class AuthenticationService extends BaseAuthService {
+  constructor() {
+    super();
+    // Load user from storage during service initialization
+    this.loadUserFromStorage();
+  }
+
   // Update the isUserAuthenticated method to be more reliable
   isUserAuthenticated(): boolean {
     const session = this.getCurrentSession();

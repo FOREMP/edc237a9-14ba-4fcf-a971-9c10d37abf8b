@@ -167,6 +167,8 @@ export const useAuth = () => {
   }, [performAdminCheck, syncSubscriptionWithStripe]);
 
   const handleAuthChange = useCallback(async (event: string, session: any) => {
+    console.log("useAuth: Auth event:", event, "Session exists:", !!session);
+    
     // Prevent auth loops by limiting rapid events
     authEventCountRef.current += 1;
     if (authEventCountRef.current > 20) {
@@ -182,11 +184,13 @@ export const useAuth = () => {
     }, 1000);
     
     if (authInProgressRef.current) {
+      console.log("useAuth: Auth change already in progress, skipping");
       return;
     }
     
     // Prevent duplicate INITIAL_SESSION events
     if (lastAuthEventRef.current === event && event === 'INITIAL_SESSION') {
+      console.log("useAuth: Duplicate INITIAL_SESSION event, skipping");
       return;
     }
     
@@ -194,18 +198,61 @@ export const useAuth = () => {
     authInProgressRef.current = true;
     
     try {
-      if (session) {
-        const currentUser = authService.getCurrentUser();
+      if (session?.user) {
+        console.log("useAuth: Setting authenticated user from session");
+        setIsAuthenticated(true);
+        
+        // Get user from auth service or create from session
+        let currentUser = authService.getCurrentUser();
+        if (!currentUser && session.user) {
+          // Create basic user from session data
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+            
+          if (profileData) {
+            currentUser = {
+              id: profileData.id,
+              googleId: profileData.id,
+              email: profileData.email || session.user.email || '',
+              companyName: profileData.company_name || 'Company',
+              role: profileData.role as UserRole,
+              organizationNumber: profileData.organization_number || undefined,
+              vatNumber: profileData.vat_number || undefined,
+              website: profileData.website || undefined,
+              companyDescription: profileData.company_description || undefined,
+            };
+          } else {
+            // Fallback user from session
+            currentUser = {
+              id: session.user.id,
+              googleId: session.user.id,
+              email: session.user.email || '',
+              companyName: 'Company',
+              role: isAdminEmail(session.user.email || '') ? 'admin' : 'company'
+            };
+          }
+        }
+        
         if (currentUser) {
-          setIsAuthenticated(true);
           await setUserWithAdminCheck(currentUser);
-        } else {
-          setIsAuthenticated(false);
-          await setUserWithAdminCheck(null);
         }
       } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        console.log("useAuth: User signed out");
         setIsAuthenticated(false);
         await setUserWithAdminCheck(null);
+      } else if (event === 'TOKEN_REFRESHED') {
+        console.log("useAuth: Token refreshed, maintaining auth state");
+        // Don't change auth state on token refresh if we already have a user
+        if (!user && session?.user) {
+          setIsAuthenticated(true);
+          const currentUser = authService.getCurrentUser();
+          if (currentUser) {
+            await setUserWithAdminCheck(currentUser);
+          }
+        }
       }
     } catch (error) {
       console.error("useAuth: Error handling auth change:", error);
@@ -213,7 +260,7 @@ export const useAuth = () => {
       setIsLoading(false);
       authInProgressRef.current = false;
     }
-  }, [setUserWithAdminCheck]);
+  }, [setUserWithAdminCheck, user]);
 
   useEffect(() => {
     if (authInitialized) return;
@@ -231,6 +278,8 @@ export const useAuth = () => {
     setAdminCheckComplete(false);
     authInProgressRef.current = true;
     
+    console.log("useAuth: Initializing auth");
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (mounted) {
         handleAuthChange(event, session);
@@ -239,20 +288,66 @@ export const useAuth = () => {
     
     const initializeAuth = async () => {
       try {
-        const sessionResult = await supabase.auth.getSession();
+        console.log("useAuth: Getting initial session");
+        const { data: sessionResult, error } = await supabase.auth.getSession();
         
-        if (sessionResult?.data?.session) {
-          const currentUser = authService.getCurrentUser();
-          const authState = authService.isUserAuthenticated();
+        if (error) {
+          console.error("useAuth: Error getting session:", error);
+          setIsAuthenticated(false);
+          await setUserWithAdminCheck(null);
+        } else if (sessionResult?.session?.user) {
+          console.log("useAuth: Found existing session for user:", sessionResult.session.user.email);
+          setIsAuthenticated(true);
           
-          if (currentUser && authState) {
-            setIsAuthenticated(true);
+          // Try to get user from auth service first
+          let currentUser = authService.getCurrentUser();
+          
+          // If no user in auth service, fetch from database
+          if (!currentUser) {
+            console.log("useAuth: No user in auth service, fetching from database");
+            try {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', sessionResult.session.user.id)
+                .maybeSingle();
+                
+              if (profileData) {
+                currentUser = {
+                  id: profileData.id,
+                  googleId: profileData.id,
+                  email: profileData.email || sessionResult.session.user.email || '',
+                  companyName: profileData.company_name || 'Company',
+                  role: profileData.role as UserRole,
+                  organizationNumber: profileData.organization_number || undefined,
+                  vatNumber: profileData.vat_number || undefined,
+                  website: profileData.website || undefined,
+                  companyDescription: profileData.company_description || undefined,
+                };
+                
+                // Update auth service with the user data
+                authService['setCurrentUser'](currentUser);
+              }
+            } catch (profileError) {
+              console.error("useAuth: Error fetching profile:", profileError);
+            }
+          }
+          
+          if (currentUser) {
             await setUserWithAdminCheck(currentUser);
           } else {
-            setIsAuthenticated(false);
-            await setUserWithAdminCheck(null);
+            // Create fallback user from session
+            const fallbackUser: User = {
+              id: sessionResult.session.user.id,
+              googleId: sessionResult.session.user.id,
+              email: sessionResult.session.user.email || '',
+              companyName: 'Company',
+              role: isAdminEmail(sessionResult.session.user.email || '') ? 'admin' : 'company'
+            };
+            await setUserWithAdminCheck(fallbackUser);
           }
         } else {
+          console.log("useAuth: No existing session found");
           setIsAuthenticated(false);
           await setUserWithAdminCheck(null);
         }
