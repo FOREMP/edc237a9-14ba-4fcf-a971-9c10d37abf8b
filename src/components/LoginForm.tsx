@@ -103,8 +103,8 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
     <div className="flex justify-center items-center min-h-[500px]">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Välkommen</CardTitle>
-          <CardDescription>
+          <CardTitle className="text-slate-900">Välkommen</CardTitle>
+          <CardDescription className="text-slate-600">
             Logga in på ditt konto eller skapa ett nytt
           </CardDescription>
         </CardHeader>
@@ -118,32 +118,36 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signin-email">E-post</Label>
+                  <Label htmlFor="signin-email" className="text-slate-700">E-post</Label>
                   <Input
                     id="signin-email"
                     name="email"
                     type="email"
+                    placeholder="din@epost.se"
                     value={formData.email}
                     onChange={handleInputChange}
                     required
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="signin-password">Lösenord</Label>
+                  <Label htmlFor="signin-password" className="text-slate-700">Lösenord</Label>
                   <Input
                     id="signin-password"
                     name="password"
                     type="password"
+                    placeholder="••••••••"
                     value={formData.password}
                     onChange={handleInputChange}
                     required
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <Button 
                   type="submit" 
-                  className="w-full"
+                  className="w-full bg-primary hover:bg-primary/90"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -161,56 +165,63 @@ const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">E-post</Label>
+                  <Label htmlFor="signup-email" className="text-slate-700">E-post</Label>
                   <Input
                     id="signup-email"
                     name="email"
                     type="email"
+                    placeholder="din@epost.se"
                     value={formData.email}
                     onChange={handleInputChange}
                     required
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="company-name">Företagsnamn</Label>
+                  <Label htmlFor="company-name" className="text-slate-700">Företagsnamn</Label>
                   <Input
                     id="company-name"
                     name="companyName"
                     type="text"
+                    placeholder="Ditt företagsnamn"
                     value={formData.companyName}
                     onChange={handleInputChange}
-                    placeholder="Ditt företag"
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Lösenord</Label>
+                  <Label htmlFor="signup-password" className="text-slate-700">Lösenord</Label>
                   <Input
                     id="signup-password"
                     name="password"
                     type="password"
+                    placeholder="••••••••"
                     value={formData.password}
                     onChange={handleInputChange}
                     required
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Bekräfta lösenord</Label>
+                  <Label htmlFor="confirm-password" className="text-slate-700">Bekräfta lösenord</Label>
                   <Input
                     id="confirm-password"
                     name="confirmPassword"
                     type="password"
+                    placeholder="••••••••"
                     value={formData.confirmPassword}
                     onChange={handleInputChange}
                     required
+                    className="border-slate-200 focus:border-primary"
                   />
                 </div>
                 
                 <Button 
                   type="submit" 
-                  className="w-full"
+                  className="w-full bg-primary hover:bg-primary/90"
                   disabled={isLoading}
                 >
                   {isLoading ? (

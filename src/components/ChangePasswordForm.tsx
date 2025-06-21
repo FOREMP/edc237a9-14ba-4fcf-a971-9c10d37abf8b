@@ -76,8 +76,8 @@ const ChangePasswordForm = () => {
       <form onSubmit={form.handleSubmit(handleSubmit)}>
         <Card>
           <CardHeader>
-            <CardTitle>Ändra inställningar</CardTitle>
-            <CardDescription>Uppdatera din e-postadress eller ditt lösenord</CardDescription>
+            <CardTitle className="text-slate-900">Ändra inställningar</CardTitle>
+            <CardDescription className="text-slate-600">Uppdatera din e-postadress eller ditt lösenord</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <FormField
@@ -85,13 +85,14 @@ const ChangePasswordForm = () => {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>E-postadress</FormLabel>
+                  <FormLabel className="text-slate-700">E-postadress</FormLabel>
                   <FormControl>
                     <Input 
                       type="email" 
-                      placeholder="ny@epost.se" 
+                      placeholder="din@epost.se" 
                       {...field}
-                      disabled={isChangingEmail} 
+                      disabled={isChangingEmail}
+                      className="border-slate-200 focus:border-primary"
                     />
                   </FormControl>
                   <FormMessage />
@@ -104,13 +105,14 @@ const ChangePasswordForm = () => {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nytt lösenord</FormLabel>
+                  <FormLabel className="text-slate-700">Nytt lösenord</FormLabel>
                   <FormControl>
                     <Input 
                       type="password" 
                       placeholder="••••••••" 
                       {...field}
-                      disabled={isChangingPassword} 
+                      disabled={isChangingPassword}
+                      className="border-slate-200 focus:border-primary"
                     />
                   </FormControl>
                   <FormMessage />
@@ -123,13 +125,14 @@ const ChangePasswordForm = () => {
               name="confirmPassword"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Bekräfta nytt lösenord</FormLabel>
+                  <FormLabel className="text-slate-700">Bekräfta nytt lösenord</FormLabel>
                   <FormControl>
                     <Input 
                       type="password" 
                       placeholder="••••••••" 
                       {...field}
-                      disabled={isChangingPassword} 
+                      disabled={isChangingPassword}
+                      className="border-slate-200 focus:border-primary"
                     />
                   </FormControl>
                   <FormMessage />
@@ -141,6 +144,7 @@ const ChangePasswordForm = () => {
             <Button 
               type="submit"
               disabled={isChangingPassword || isChangingEmail}
+              className="bg-primary hover:bg-primary/90"
             >
               {(isChangingPassword || isChangingEmail) ? (
                 <>

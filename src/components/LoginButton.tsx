@@ -13,7 +13,7 @@ const LoginButton = () => {
   return (
     <Button 
       onClick={handleClick} 
-      className="flex items-center gap-2 border border-black text-black w-full sm:w-auto"
+      className="flex items-center gap-2 border-2 border-slate-300 text-slate-700 bg-white hover:bg-slate-50 w-full sm:w-auto"
       variant="outline"
     >
       <LogIn size={18} />
