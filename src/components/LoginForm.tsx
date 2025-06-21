@@ -1,247 +1,233 @@
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Mail, User } from "lucide-react";
-import { authService } from "@/services/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
 interface LoginFormProps {
   returnPath?: string;
 }
 
-const cleanupAuthState = () => {
-  // Remove all Supabase auth keys from localStorage
-  Object.keys(localStorage).forEach((key) => {
-    if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
-      localStorage.removeItem(key);
-    }
-  });
-  
-  // Remove from sessionStorage if in use
-  if (typeof sessionStorage !== 'undefined') {
-    Object.keys(sessionStorage).forEach((key) => {
-      if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
-        sessionStorage.removeItem(key);
-      }
-    });
-  }
-};
-
 const LoginForm = ({ returnPath = "/dashboard" }: LoginFormProps) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const navigate = useNavigate();
-  
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    companyName: "",
+    confirmPassword: ""
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!email || !password) {
-      toast.error("Fyll i både e-post och lösenord");
-      return;
-    }
-    
     setIsLoading(true);
+
     try {
-      // Clean up existing auth state before logging in to prevent conflicts
-      cleanupAuthState();
-      
-      console.log("Logging in with email:", email);
-      const result = await authService.loginWithEmail(email, password);
-      
-      if (result.success) {
-        console.log("Login successful, user:", result.user);
-        toast.success("Inloggad som " + (result.user?.companyName || email));
-        console.log("Login successful, navigating to:", returnPath);
-        
-        // Add a small delay to ensure auth context is updated
-        setTimeout(() => {
-          navigate(returnPath, { replace: true });
-        }, 100);
-      } else {
-        console.error("Login failed:", result.error);
-        toast.error(result.error || "Inloggning misslyckades");
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data.user) {
+        toast.success("Inloggning lyckades!");
+        window.location.href = returnPath;
       }
     } catch (error) {
-      console.error("Login error:", error);
       toast.error("Ett fel uppstod vid inloggning");
     } finally {
       setIsLoading(false);
     }
   };
-  
-  const handleRegister = async (e: React.FormEvent) => {
+
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password || !companyName) {
-      toast.error("Fyll i alla fält");
+    if (formData.password !== formData.confirmPassword) {
+      toast.error("Lösenorden matchar inte");
       return;
     }
-    
+
+    if (formData.password.length < 6) {
+      toast.error("Lösenordet måste vara minst 6 tecken");
+      return;
+    }
+
     setIsLoading(true);
+
     try {
-      // Clean up existing auth state before registration to prevent conflicts
-      cleanupAuthState();
+      const redirectUrl = `${window.location.origin}${returnPath}`;
       
-      console.log("Registering with email:", email);
-      const result = await authService.registerWithEmail(email, password, companyName);
-      
-      if (result.success) {
-        if (result.error) {
-          // This is a success but with a message (e.g., "check your email")
-          console.log("Registration succeeded with notice:", result.error);
-          toast.info(result.error);
-        } else {
-          console.log("Registration successful, user:", result.user);
-          toast.success("Registrering lyckades! Du är nu inloggad");
-          console.log("Registration successful, navigating to:", returnPath);
-          
-          // Add a small delay to ensure auth context is updated
-          setTimeout(() => {
-            navigate(returnPath, { replace: true });
-          }, 100);
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            company_name: formData.companyName || 'Company'
+          }
         }
-      } else {
-        console.error("Registration failed:", result.error);
-        toast.error(result.error || "Registrering misslyckades");
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data.user) {
+        toast.success("Konto skapat! Kontrollera din e-post för att bekräfta kontot.");
       }
     } catch (error) {
-      console.error("Registration error:", error);
       toast.error("Ett fel uppstod vid registrering");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleForgotPassword = () => {
-    navigate("/reset-password");
-  };
-  
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <Tabs defaultValue="login">
+    <div className="flex justify-center items-center min-h-[500px]">
+      <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-center">Skill Base UF</CardTitle>
-          <CardDescription className="text-center">Logga in för att fortsätta</CardDescription>
-          <TabsList className="grid w-full grid-cols-2 mt-2">
-            <TabsTrigger value="login">Logga in</TabsTrigger>
-            <TabsTrigger value="register">Registrera</TabsTrigger>
-          </TabsList>
+          <CardTitle>Välkommen</CardTitle>
+          <CardDescription>
+            Logga in på ditt konto eller skapa ett nytt
+          </CardDescription>
         </CardHeader>
-        
         <CardContent>
-          <TabsContent value="login">
-            <form onSubmit={handleEmailLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">E-post</Label>
-                <Input 
-                  id="email" 
-                  type="email" 
-                  placeholder="din@email.se" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+          <Tabs defaultValue="signin" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="signin">Logga in</TabsTrigger>
+              <TabsTrigger value="signup">Registrera</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="signin">
+              <form onSubmit={handleSignIn} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signin-email">E-post</Label>
+                  <Input
+                    id="signin-email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="signin-password">Lösenord</Label>
+                  <Input
+                    id="signin-password"
+                    name="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                
+                <Button 
+                  type="submit" 
+                  className="w-full"
                   disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="password">Lösenord</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  placeholder="••••••••" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div className="flex justify-end">
-                <Button
-                  variant="link" 
-                  type="button"
-                  className="p-0 h-auto text-sm"
-                  onClick={handleForgotPassword}
                 >
-                  Glömt lösenord?
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loggar in...
+                    </>
+                  ) : (
+                    "Logga in"
+                  )}
                 </Button>
-              </div>
-              
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading}
-              >
-                <Mail className="mr-2 h-4 w-4" />
-                {isLoading ? "Loggar in..." : "Logga in med E-post"}
-              </Button>
-            </form>
-          </TabsContent>
-          
-          <TabsContent value="register">
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="company">Företagsnamn</Label>
-                <Input 
-                  id="company" 
-                  type="text" 
-                  placeholder="Ditt företag AB" 
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
+              </form>
+            </TabsContent>
+            
+            <TabsContent value="signup">
+              <form onSubmit={handleSignUp} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">E-post</Label>
+                  <Input
+                    id="signup-email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="company-name">Företagsnamn</Label>
+                  <Input
+                    id="company-name"
+                    name="companyName"
+                    type="text"
+                    value={formData.companyName}
+                    onChange={handleInputChange}
+                    placeholder="Ditt företag"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Lösenord</Label>
+                  <Input
+                    id="signup-password"
+                    name="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Bekräfta lösenord</Label>
+                  <Input
+                    id="confirm-password"
+                    name="confirmPassword"
+                    type="password"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    required
+                  />
+                </div>
+                
+                <Button 
+                  type="submit" 
+                  className="w-full"
                   disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="reg-email">E-post</Label>
-                <Input 
-                  id="reg-email" 
-                  type="email" 
-                  placeholder="din@email.se" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="reg-password">Lösenord</Label>
-                <Input 
-                  id="reg-password" 
-                  type="password" 
-                  placeholder="••••••••" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading}
-              >
-                <User className="mr-2 h-4 w-4" />
-                {isLoading ? "Registrerar..." : "Registrera konto"}
-              </Button>
-            </form>
-          </TabsContent>
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Registrerar...
+                    </>
+                  ) : (
+                    "Skapa konto"
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
         </CardContent>
-        
-        <CardFooter className="flex-col space-y-2">
-          <p className="text-xs text-center text-muted-foreground">
-            Genom att logga in eller registrera dig godkänner du våra <Link to="/terms" className="underline">villkor</Link> och <Link to="/privacy" className="underline">integritetspolicy</Link>.
-          </p>
-        </CardFooter>
-      </Tabs>
-    </Card>
+      </Card>
+    </div>
   );
 };
 
