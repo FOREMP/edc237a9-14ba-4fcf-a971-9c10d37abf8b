@@ -6,7 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 // Cache subscriptions in memory for faster response times
 const subscriptionCache = new Map();
-const CACHE_TTL = 2000; // Reduced to 2 seconds for real-time updates
+const CACHE_TTL = 2000; // 2 seconds for real-time updates
 
 serve(async (req) => {
   // Handle CORS preflight request
@@ -21,7 +21,12 @@ serve(async (req) => {
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecretKey) {
       console.error("Missing STRIPE_SECRET_KEY in environment");
-      throw new Error("STRIPE_SECRET_KEY is not set in the environment");
+      return new Response(JSON.stringify({ 
+        error: "STRIPE_SECRET_KEY is not configured. Please add it to Supabase secrets."
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     // Get authorization header
@@ -42,7 +47,12 @@ serve(async (req) => {
     
     if (!supabaseUrl || !supabaseKey) {
       console.error("Missing Supabase URL or key");
-      throw new Error("Missing Supabase configuration");
+      return new Response(JSON.stringify({ 
+        error: "Missing Supabase configuration"
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -99,7 +109,7 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (subscriberError) {
+    if (subscriberError && subscriberError.code !== 'PGRST116') {
       console.error('Error fetching subscriber data:', subscriberError);
     }
 
@@ -108,48 +118,65 @@ serve(async (req) => {
     // If no customer ID found in our database, search by email in Stripe
     if (!customerId) {
       console.log("No customer ID in database, searching Stripe by email:", user.email);
-      const customers = await stripe.customers.list({
-        email: user.email,
-        limit: 1,
-      });
-      
-      if (customers.data && customers.data.length > 0) {
-        customerId = customers.data[0].id;
-        console.log("Found customer in Stripe:", customerId);
-      } else {
-        console.log("No Stripe customer found for email:", user.email);
+      try {
+        const customers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
         
-        // Create or update the subscriber record to show no subscription
-        const { error: upsertError } = await supabase
-          .from("subscribers")
-          .upsert({
-            user_id: user.id,
-            email: user.email,
+        if (customers.data && customers.data.length > 0) {
+          customerId = customers.data[0].id;
+          console.log("Found customer in Stripe:", customerId);
+        } else {
+          console.log("No Stripe customer found for email:", user.email);
+          
+          // Create or update the subscriber record to show no subscription
+          const { error: upsertError } = await supabase
+            .from("subscribers")
+            .upsert({
+              user_id: user.id,
+              email: user.email,
+              subscribed: false,
+              subscription_tier: "free",
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+          
+          if (upsertError) {
+            console.error("Error upserting subscriber record:", upsertError);
+          } else {
+            console.log("Created/updated free subscriber record successfully");
+          }
+          
+          const resultData = { 
             subscribed: false,
             subscription_tier: "free",
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
-        
-        if (upsertError) {
-          console.error("Error upserting subscriber record:", upsertError);
-        } else {
-          console.log("Created/updated free subscriber record successfully");
+            status: "inactive",
+            plan_name: "free"
+          };
+          
+          // Cache the result
+          subscriptionCache.set(cacheKey, {
+            data: resultData,
+            timestamp: Date.now()
+          });
+          
+          console.log("=== CHECK SUBSCRIPTION COMPLETED (FREE) ===");
+          return new Response(JSON.stringify(resultData), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
-        
+      } catch (stripeError) {
+        console.error("Error searching Stripe customers:", stripeError);
+        // Continue with free plan if Stripe is unavailable
         const resultData = { 
           subscribed: false,
           subscription_tier: "free",
-          status: "inactive",
-          plan_name: "free"
+          status: "error",
+          plan_name: "free",
+          error: "Unable to verify subscription status"
         };
         
-        // Cache the result
-        subscriptionCache.set(cacheKey, {
-          data: resultData,
-          timestamp: Date.now()
-        });
-        
-        console.log("=== CHECK SUBSCRIPTION COMPLETED (FREE) ===");
         return new Response(JSON.stringify(resultData), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -159,10 +186,21 @@ serve(async (req) => {
 
     // Now check for active subscriptions
     console.log("Checking for subscriptions for customer:", customerId);
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      limit: 10, // Get all subscriptions to find the most recent active one
-    });
+    let subscriptions;
+    try {
+      subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        limit: 10, // Get all subscriptions to find the most recent active one
+      });
+    } catch (stripeError) {
+      console.error("Error fetching subscriptions from Stripe:", stripeError);
+      return new Response(JSON.stringify({ 
+        error: `Failed to fetch subscription data: ${stripeError instanceof Error ? stripeError.message : 'Unknown error'}`
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     let isSubscribed = false;
     let subscriptionTier = "free";
@@ -190,65 +228,77 @@ serve(async (req) => {
         // Find the first subscription item with a price
         const item = activeSubscription.items.data[0];
         if (item) {
-          const price = await stripe.prices.retrieve(item.price.id);
-          const productId = price.product;
-          
-          // Get the product to determine the tier
-          const product = await stripe.products.retrieve(productId.toString());
-          
-          // Determine tier from product metadata or name
-          if (product.metadata && product.metadata.tier) {
-            subscriptionTier = product.metadata.tier.toLowerCase();
-            planName = product.metadata.tier.toLowerCase();
-          } else {
-            // Fall back to determine by product name
-            const productName = product.name.toLowerCase();
-            if (productName.includes('basic') || productName.includes('bas')) {
-              subscriptionTier = 'basic';
-              planName = 'basic';
-            } else if (productName.includes('standard')) {
-              subscriptionTier = 'standard';
-              planName = 'standard';
-            } else if (productName.includes('premium')) {
-              subscriptionTier = 'premium';
-              planName = 'premium';
-            } else if (productName.includes('single')) {
-              subscriptionTier = 'single';
-              planName = 'single';
+          try {
+            const price = await stripe.prices.retrieve(item.price.id);
+            const productId = price.product;
+            
+            // Get the product to determine the tier
+            const product = await stripe.products.retrieve(productId.toString());
+            
+            // Determine tier from product metadata or name
+            if (product.metadata && product.metadata.tier) {
+              subscriptionTier = product.metadata.tier.toLowerCase();
+              planName = product.metadata.tier.toLowerCase();
+            } else {
+              // Fall back to determine by product name
+              const productName = product.name.toLowerCase();
+              if (productName.includes('basic') || productName.includes('bas')) {
+                subscriptionTier = 'basic';
+                planName = 'basic';
+              } else if (productName.includes('standard')) {
+                subscriptionTier = 'standard';
+                planName = 'standard';
+              } else if (productName.includes('premium')) {
+                subscriptionTier = 'premium';
+                planName = 'premium';
+              } else if (productName.includes('single')) {
+                subscriptionTier = 'single';
+                planName = 'single';
+              }
             }
+            
+            console.log(`Determined subscription tier: ${subscriptionTier}, plan: ${planName}`);
+          } catch (productError) {
+            console.error("Error fetching product details:", productError);
+            // Continue with basic tier if product details fail
+            subscriptionTier = 'basic';
+            planName = 'basic';
           }
-          
-          console.log(`Determined subscription tier: ${subscriptionTier}, plan: ${planName}`);
         }
       }
     } else {
       // Check if user has a one-time purchase (single plan)
       console.log("No subscriptions found, checking for one-time purchases");
-      const charges = await stripe.charges.list({
-        customer: customerId,
-        limit: 10,
-      });
-      
-      if (charges.data.length > 0) {
-        // Look for successful charges with a "single" plan metadata
-        const singlePlanCharge = charges.data.find(charge => 
-          charge.status === 'succeeded' && 
-          charge.metadata && 
-          charge.metadata.plan === 'single'
-        );
+      try {
+        const charges = await stripe.charges.list({
+          customer: customerId,
+          limit: 10,
+        });
         
-        if (singlePlanCharge) {
-          isSubscribed = true;
-          subscriptionTier = 'single';
-          planName = 'single';
-          status = 'active';
-          // Set an expiration date 30 days from charge date
-          const chargeDate = new Date(singlePlanCharge.created * 1000);
-          const expireDate = new Date(chargeDate);
-          expireDate.setDate(chargeDate.getDate() + 30);
-          subscriptionEnd = expireDate.toISOString();
-          console.log(`Found single plan purchase, expires: ${subscriptionEnd}`);
+        if (charges.data.length > 0) {
+          // Look for successful charges with a "single" plan metadata
+          const singlePlanCharge = charges.data.find(charge => 
+            charge.status === 'succeeded' && 
+            charge.metadata && 
+            charge.metadata.plan === 'single'
+          );
+          
+          if (singlePlanCharge) {
+            isSubscribed = true;
+            subscriptionTier = 'single';
+            planName = 'single';
+            status = 'active';
+            // Set an expiration date 30 days from charge date
+            const chargeDate = new Date(singlePlanCharge.created * 1000);
+            const expireDate = new Date(chargeDate);
+            expireDate.setDate(chargeDate.getDate() + 30);
+            subscriptionEnd = expireDate.toISOString();
+            console.log(`Found single plan purchase, expires: ${subscriptionEnd}`);
+          }
         }
+      } catch (chargeError) {
+        console.error("Error checking charges:", chargeError);
+        // Continue with free plan if charges check fails
       }
     }
 
@@ -260,23 +310,28 @@ serve(async (req) => {
       plan_name: planName
     });
     
-    const { error: upsertError } = await supabase
-      .from("subscribers")
-      .upsert({
-        user_id: user.id,
-        email: user.email,
-        stripe_customer_id: customerId,
-        subscribed: isSubscribed,
-        subscription_tier: subscriptionTier,
-        subscription_end: subscriptionEnd,
-        subscription_id: subscriptionId,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id' });
-    
-    if (upsertError) {
-      console.error("Error updating subscriber record:", upsertError);
-    } else {
-      console.log("Subscriber record updated successfully");
+    try {
+      const { error: upsertError } = await supabase
+        .from("subscribers")
+        .upsert({
+          user_id: user.id,
+          email: user.email,
+          stripe_customer_id: customerId,
+          subscribed: isSubscribed,
+          subscription_tier: subscriptionTier,
+          subscription_end: subscriptionEnd,
+          subscription_id: subscriptionId,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+      
+      if (upsertError) {
+        console.error("Error updating subscriber record:", upsertError);
+      } else {
+        console.log("Subscriber record updated successfully");
+      }
+    } catch (dbError) {
+      console.error("Database update failed:", dbError);
+      // Continue even if database update fails
     }
 
     // Update the job posting limits table to match
@@ -287,19 +342,24 @@ serve(async (req) => {
       else if (subscriptionTier === 'premium') monthlyPostLimit = 999;
       else if (subscriptionTier === 'single') monthlyPostLimit = 1;
       
-      const { error: limitsError } = await supabase
-        .from("job_posting_limits")
-        .upsert({
-          user_id: user.id,
-          subscription_tier: subscriptionTier,
-          monthly_post_limit: monthlyPostLimit,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-      
-      if (limitsError) {
-        console.error("Error updating job posting limits:", limitsError);
-      } else {
-        console.log("Job posting limits updated successfully");
+      try {
+        const { error: limitsError } = await supabase
+          .from("job_posting_limits")
+          .upsert({
+            user_id: user.id,
+            subscription_tier: subscriptionTier,
+            monthly_post_limit: monthlyPostLimit,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+        
+        if (limitsError) {
+          console.error("Error updating job posting limits:", limitsError);
+        } else {
+          console.log("Job posting limits updated successfully");
+        }
+      } catch (limitsDbError) {
+        console.error("Job posting limits update failed:", limitsDbError);
+        // Continue even if limits update fails
       }
     }
 

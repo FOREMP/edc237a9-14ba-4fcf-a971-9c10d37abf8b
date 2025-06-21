@@ -18,11 +18,18 @@ serve(async (req) => {
   }
 
   try {
+    console.log("=== CREATE CHECKOUT STARTED ===");
+    
     // Get the Stripe API key from environment
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecretKey) {
       console.error("Missing STRIPE_SECRET_KEY in environment");
-      throw new Error("STRIPE_SECRET_KEY is not set in the environment");
+      return new Response(JSON.stringify({ 
+        error: "STRIPE_SECRET_KEY is not set in the environment. Please configure it in Supabase Edge Function secrets."
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     // Get authorization header
@@ -44,7 +51,12 @@ serve(async (req) => {
     
     if (!supabaseUrl || !supabaseKey) {
       console.error("Missing Supabase URL or key");
-      throw new Error("Missing Supabase configuration");
+      return new Response(JSON.stringify({ 
+        error: "Missing Supabase configuration"
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
     
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -63,10 +75,10 @@ serve(async (req) => {
       });
     }
     
-    if (!user) {
-      console.error("No user found in token");
+    if (!user || !user.email) {
+      console.error("No user or email found in token");
       return new Response(JSON.stringify({ 
-        error: "No user found. Please login again."
+        error: "No user found or email missing. Please login again."
       }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -125,29 +137,39 @@ serve(async (req) => {
     if (existingCustomer?.stripe_customer_id) {
       customerId = existingCustomer.stripe_customer_id;
       console.log("Using existing customer ID:", customerId);
-    } else {
+      
+      // Verify customer exists in Stripe
+      try {
+        await stripe.customers.retrieve(customerId);
+      } catch (stripeError) {
+        console.error("Customer not found in Stripe, will create new:", stripeError);
+        customerId = null;
+      }
+    }
+    
+    if (!customerId) {
       // Check if customer exists in Stripe by email
-      const existingStripeCustomers = await stripe.customers.list({
-        email: user.email,
-        limit: 1,
-      });
+      try {
+        const existingStripeCustomers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
 
-      if (existingStripeCustomers.data.length > 0) {
-        customerId = existingStripeCustomers.data[0].id;
-        console.log("Found customer in Stripe by email:", customerId);
-        
-        // Update subscriber record with customer ID
-        await supabase
-          .from("subscribers")
-          .upsert({
-            user_id: user.id,
-            email: user.email,
-            stripe_customer_id: customerId,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
-      } else {
-        // Create a new Stripe customer
-        try {
+        if (existingStripeCustomers.data.length > 0) {
+          customerId = existingStripeCustomers.data[0].id;
+          console.log("Found customer in Stripe by email:", customerId);
+          
+          // Update subscriber record with customer ID
+          await supabase
+            .from("subscribers")
+            .upsert({
+              user_id: user.id,
+              email: user.email,
+              stripe_customer_id: customerId,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+        } else {
+          // Create a new Stripe customer
           const newCustomer = await stripe.customers.create({
             email: user.email,
             metadata: {
@@ -166,15 +188,15 @@ serve(async (req) => {
               stripe_customer_id: customerId,
               updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
-        } catch (error) {
-          console.error("Failed to create Stripe customer:", error);
-          return new Response(JSON.stringify({ 
-            error: `Failed to create Stripe customer: ${error instanceof Error ? error.message : 'Unknown error'}`
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
         }
+      } catch (error) {
+        console.error("Failed to create or find Stripe customer:", error);
+        return new Response(JSON.stringify({ 
+          error: `Failed to handle Stripe customer: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 
@@ -272,9 +294,12 @@ serve(async (req) => {
         mode: mode,
         success_url: successUrl,
         cancel_url: `${req.headers.get("origin")}/pricing?payment_canceled=true`,
+        allow_promotion_codes: true, // Allow discount codes
+        billing_address_collection: 'auto', // Collect billing address automatically
       });
       
-      console.log("Checkout session created:", session.id, session.url, "for user:", user.id);
+      console.log("Checkout session created successfully:", session.id);
+      console.log("=== CREATE CHECKOUT COMPLETED ===");
       
       return new Response(JSON.stringify({ url: session.url }), {
         status: 200,
