@@ -13,7 +13,6 @@ export const useAuth = () => {
   const [isCompany, setIsCompany] = useState<boolean>(false);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
-  const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
 
   const loadUserPreferences = useCallback(async () => {
     if (!isAuthenticated || !user?.id) return;
@@ -66,7 +65,6 @@ export const useAuth = () => {
       setUser(null);
       setIsAdmin(false);
       setIsCompany(false);
-      setAdminCheckComplete(true);
       return;
     }
 
@@ -80,45 +78,50 @@ export const useAuth = () => {
     setUser(finalUser);
     setIsAdmin(isSpecialAdmin || userData.role === 'admin');
     setIsCompany(userData.role === 'company' && !isSpecialAdmin);
-    setAdminCheckComplete(true);
   }, []);
 
   const handleAuthChange = useCallback(async (event: string, session: any) => {
     console.log("Auth event:", event, "Session exists:", !!session);
     
-    if (session?.user) {
-      setIsAuthenticated(true);
-      
-      // Get or create user profile
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
+    try {
+      if (session?.user) {
+        setIsAuthenticated(true);
         
-      if (profileData) {
-        const userData: User = {
-          id: profileData.id,
-          googleId: profileData.id,
-          email: profileData.email,
-          companyName: profileData.company_name || 'Company',
-          role: profileData.role as UserRole,
-          organizationNumber: profileData.organization_number || undefined,
-          vatNumber: profileData.vat_number || undefined,
-          website: profileData.website || undefined,
-          companyDescription: profileData.company_description || undefined,
-        };
-        
-        await setUserData(userData);
-        authService['setCurrentUser'](userData);
+        // Get or create user profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+          
+        if (profileData) {
+          const userData: User = {
+            id: profileData.id,
+            googleId: profileData.id,
+            email: profileData.email,
+            companyName: profileData.company_name || 'Company',
+            role: profileData.role as UserRole,
+            organizationNumber: profileData.organization_number || undefined,
+            vatNumber: profileData.vat_number || undefined,
+            website: profileData.website || undefined,
+            companyDescription: profileData.company_description || undefined,
+          };
+          
+          await setUserData(userData);
+          authService['setCurrentUser'](userData);
+        }
+      } else {
+        setIsAuthenticated(false);
+        await setUserData(null);
+        authService['setCurrentUser'](null);
       }
-    } else {
+    } catch (error) {
+      console.error("Error in auth change handler:", error);
       setIsAuthenticated(false);
       await setUserData(null);
-      authService['setCurrentUser'](null);
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   }, [setUserData]);
 
   useEffect(() => {
@@ -142,20 +145,18 @@ export const useAuth = () => {
           console.error("Error getting session:", error);
           setIsAuthenticated(false);
           await setUserData(null);
+          setIsLoading(false);
         } else if (sessionResult?.session?.user) {
           await handleAuthChange('INITIAL_SESSION', sessionResult.session);
         } else {
           setIsAuthenticated(false);
           await setUserData(null);
+          setIsLoading(false);
         }
       } catch (error) {
         console.error("Error initializing auth:", error);
         setIsAuthenticated(false);
-        setAdminCheckComplete(true);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     };
     
@@ -176,14 +177,14 @@ export const useAuth = () => {
   return {
     user,
     isAuthenticated,
-    isLoading: isLoading || !adminCheckComplete,
+    isLoading,
     isAdmin,
     isCompany,
     preferences,
     preferencesLoading,
     dismissApprovalProcess,
     updatePreferences,
-    adminCheckComplete,
+    adminCheckComplete: !isLoading,
     forceSessionRefresh
   };
 };

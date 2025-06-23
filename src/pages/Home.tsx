@@ -12,16 +12,24 @@ import { BriefcaseIcon, Building2Icon, SearchIcon } from "lucide-react";
 
 const Home = () => {
   const [latestJobs, setLatestJobs] = useState<Job[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const { isAuthenticated } = useAuth();
 
   useEffect(() => {
     const fetchLatestJobs = async () => {
-      const jobs = await jobsService.getAllJobs();
-      // Sort by date and get the latest 3
-      const sorted = [...jobs].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      setLatestJobs(sorted.slice(0, 3));
+      setJobsLoading(true);
+      try {
+        const jobs = await jobsService.getAllJobs();
+        // Sort by date and get the latest 3
+        const sorted = [...jobs].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setLatestJobs(sorted.slice(0, 3));
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+      } finally {
+        setJobsLoading(false);
+      }
     };
 
     fetchLatestJobs();
@@ -107,11 +115,25 @@ const Home = () => {
             </Button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {latestJobs.map(job => (
-              <JobCard key={job.id} job={job} />
-            ))}
-          </div>
+          {jobsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="bg-white p-6 rounded-lg shadow-sm">
+                  <div className="animate-pulse">
+                    <div className="h-6 bg-gray-200 rounded mb-4"></div>
+                    <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {latestJobs.map(job => (
+                <JobCard key={job.id} job={job} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
       
